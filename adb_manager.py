@@ -41,10 +41,11 @@ class AdbManager:
         except Exception:
             return False
 
-    def get_devices(self) -> List[Dict[str, Any]]:
+    def get_devices(self, lang: str = "en") -> List[Dict[str, Any]]:
         """Returns list of connected devices (both USB and Wi-Fi) with status and model details."""
         if not self.adb_path:
             return []
+        ro = (lang == "ro")
         try:
             res = subprocess.run([self.adb_path, "devices", "-l"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=8)
             lines = res.stdout.strip().splitlines()
@@ -58,7 +59,7 @@ class AdbManager:
                     serial = parts[0]
                     state = parts[1]
                     info = " ".join(parts[2:])
-                    model = "Dispozitiv Android"
+                    model = "Dispozitiv Android" if ro else "Android Device"
                     model_match = re.search(r"model:([^\s]+)", info)
                     if model_match:
                         model = model_match.group(1).replace("_", " ")
@@ -68,6 +69,7 @@ class AdbManager:
                         device_name = device_match.group(1)
 
                     is_wireless = (":" in serial) or ("_adb-tls" in serial)
+                    conn_label = "Wi-Fi (Wireless)" if is_wireless else ("Cablu USB" if ro else "USB Cable")
 
                     devices.append({
                         "serial": serial,
@@ -75,7 +77,7 @@ class AdbManager:
                         "model": model,
                         "device": device_name,
                         "is_wireless": is_wireless,
-                        "connection_type": "Wi-Fi (Wireless)" if is_wireless else "Cablu USB",
+                        "connection_type": conn_label,
                         "raw_info": info
                     })
             return devices
@@ -93,7 +95,6 @@ class AdbManager:
                 line = line.strip()
                 if not line or line.startswith("List of"):
                     continue
-                # Format: <service_name>  _adb-tls-pairing._tcp.  192.168.1.50:39123
                 m = re.search(r"([^\s]+)\s+(_adb-tls-(?:pairing|connect)\._tcp\.?)\s+(\d+\.\d+\.\d+\.\d+:\d+)", line)
                 if m:
                     name, stype, addr = m.group(1), m.group(2), m.group(3)
@@ -110,20 +111,27 @@ class AdbManager:
             "connect_services": connect_services
         }
 
-    def pair_wireless(self, pairing_addr: str, pairing_code: str, connect_addr: Optional[str] = None) -> Dict[str, Any]:
+    def pair_wireless(self, pairing_addr: str, pairing_code: str, connect_addr: Optional[str] = None, lang: str = "en") -> Dict[str, Any]:
         """Pairs with an Android 11+ device over Wi-Fi using `adb pair <ip:port> <code>`, then auto-connects."""
+        ro = (lang == "ro")
         pairing_addr = (pairing_addr or "").strip()
         pairing_code = re.sub(r"\s+", "", (pairing_code or ""))
 
         if not re.match(r"^\d+\.\d+\.\d+\.\d+:\d+$", pairing_addr):
             return {
                 "success": False,
-                "message": "Format invalid pentru IP:Port de asociere. Exemplu corect: 192.168.1.105:39123"
+                "message": (
+                    "Format invalid pentru IP:Port de asociere. Exemplu corect: 192.168.1.105:39123"
+                    if ro else "Invalid Pairing IP:Port format. Example: 192.168.1.105:39123"
+                )
             }
         if not re.match(r"^\d{6}$", pairing_code):
             return {
                 "success": False,
-                "message": "Codul de asociere trebuie să conțină exact 6 cifre (ex: 482910)."
+                "message": (
+                    "Codul de asociere trebuie să conțină exact 6 cifre (ex: 482910)."
+                    if ro else "Pairing code must be exactly 6 digits (e.g. 482910)."
+                )
             }
 
         ok, out = self.run_adb(["pair", pairing_addr, pairing_code], timeout=15)
@@ -133,18 +141,18 @@ class AdbManager:
         if not paired_ok:
             return {
                 "success": False,
-                "message": f"Asocierea a eșuat: {combined or 'Verifică dacă fereastra cu codul de 6 cifre este încă deschisă pe telefon și dacă PC-ul este în aceeași rețea Wi-Fi.'}"
+                "message": (
+                    f"Asocierea a eșuat: {combined or 'Verifică dacă fereastra cu codul de 6 cifre este încă deschisă pe telefon și dacă PC-ul este în aceeași rețea Wi-Fi.'}"
+                    if ro else f"Pairing failed: {combined or 'Make sure the 6-digit pairing dialog is still open on the phone and both devices are on the same Wi-Fi.'}"
+                )
             }
 
-        # After pairing, try to connect automatically!
         ip_part = pairing_addr.split(":")[0]
         target_connect = (connect_addr or "").strip()
 
-        # If user only gave the connect port (e.g. "41555"), prepend IP
         if target_connect and target_connect.isdigit():
             target_connect = f"{ip_part}:{target_connect}"
 
-        # If no connect_addr provided, check mdns services for the same IP
         if not target_connect:
             mdns = self.discover_wireless_services()
             for svc in mdns.get("connect_services", []):
@@ -155,33 +163,39 @@ class AdbManager:
         connect_msg = ""
         connected_now = False
         if target_connect and re.match(r"^\d+\.\d+\.\d+\.\d+:\d+$", target_connect):
-            c_res = self.connect_wireless(target_connect)
+            c_res = self.connect_wireless(target_connect, lang=lang)
             connected_now = c_res.get("success", False)
             connect_msg = f" {c_res.get('message', '')}"
         else:
-            # Check if adb auto-connected via mDNS tls serial
-            devices = self.get_devices()
+            devices = self.get_devices(lang=lang)
             if any(d["state"] == "device" and d.get("is_wireless") for d in devices):
                 connected_now = True
-                connect_msg = " Telefonul s-a conectat automat prin mDNS Wi-Fi!"
+                connect_msg = " Telefonul s-a conectat automat prin mDNS Wi-Fi!" if ro else " Phone auto-connected via mDNS Wi-Fi!"
             else:
-                connect_msg = " Acum introdu Portul de Conectare afișat pe pagina 'Depanare wireless' a telefonului (Pasul 2) pentru a finaliza conexiunea."
+                connect_msg = (
+                    " Acum introdu Portul de Conectare afișat pe pagina 'Depanare wireless' a telefonului (Pasul 2)."
+                    if ro else " Now enter the Connection IP:Port shown on the phone's Wireless Debugging screen (Step 2)."
+                )
 
         return {
             "success": True,
             "paired": True,
             "connected": connected_now,
             "ip": ip_part,
-            "message": f"✅ Asociere reușită cu {pairing_addr}!{connect_msg}"
+            "message": f"✅ {'Asociere reușită cu' if ro else 'Successfully paired with'} {pairing_addr}!{connect_msg}"
         }
 
-    def connect_wireless(self, connect_addr: str) -> Dict[str, Any]:
+    def connect_wireless(self, connect_addr: str, lang: str = "en") -> Dict[str, Any]:
         """Connects to an already paired Android device over Wi-Fi (`adb connect <ip:port>`)."""
+        ro = (lang == "ro")
         connect_addr = (connect_addr or "").strip()
         if not re.match(r"^\d+\.\d+\.\d+\.\d+(:\d+)?$", connect_addr):
             return {
                 "success": False,
-                "message": "Format invalid pentru IP:Port. Exemplu corect: 192.168.1.105:41555"
+                "message": (
+                    "Format invalid pentru IP:Port. Exemplu corect: 192.168.1.105:41555"
+                    if ro else "Invalid IP:Port format. Example: 192.168.1.105:41555"
+                )
             }
 
         ok, out = self.run_adb(["connect", connect_addr], timeout=12)
@@ -192,28 +206,35 @@ class AdbManager:
             return {
                 "success": True,
                 "address": connect_addr,
-                "message": f"📶 Conectat cu succes prin Wi-Fi la {connect_addr}!"
+                "message": f"📶 {'Conectat cu succes prin Wi-Fi la' if ro else 'Successfully connected via Wi-Fi to'} {connect_addr}!"
             }
         return {
             "success": False,
-            "message": f"Nu s-a putut conecta la {connect_addr}: {combined}. Verifică dacă 'Depanare wireless' este activată pe telefon și dacă portul este cel corect."
+            "message": (
+                f"Nu s-a putut conecta la {connect_addr}: {combined}. Verifică dacă 'Depanare wireless' este activată pe telefon și dacă portul este cel corect."
+                if ro else f"Could not connect to {connect_addr}: {combined}. Verify that Wireless Debugging is enabled on the phone and the port is correct."
+            )
         }
 
-    def disconnect_wireless(self, addr: Optional[str] = None) -> Dict[str, Any]:
+    def disconnect_wireless(self, addr: Optional[str] = None, lang: str = "en") -> Dict[str, Any]:
         """Disconnects wireless ADB connections."""
+        ro = (lang == "ro")
         args = ["disconnect"]
         if addr:
             args.append(addr.strip())
         ok, out = self.run_adb(args, timeout=8)
         return {
             "success": ok,
-            "message": "Dispozitivele Wi-Fi au fost deconectate." if ok else f"Eroare: {out}"
+            "message": (
+                ("Dispozitivele Wi-Fi au fost deconectate." if ro else "Wireless ADB devices disconnected.")
+                if ok else f"Error: {out}"
+            )
         }
 
     def run_shell(self, cmd: str, serial: Optional[str] = None, timeout: int = 25) -> Tuple[bool, str]:
         """Runs an adb shell command on the target device."""
         if not self.adb_path:
-            return False, "ADB nu a fost găsit."
+            return False, "ADB not found."
 
         adb_cmd = [self.adb_path]
         if serial:
@@ -227,14 +248,14 @@ class AdbManager:
             else:
                 return False, res.stderr or res.stdout
         except subprocess.TimeoutExpired:
-            return False, f"Comanda a expirat după {timeout} secunde."
+            return False, f"Command timed out after {timeout}s."
         except Exception as e:
             return False, str(e)
 
     def run_adb(self, args: List[str], serial: Optional[str] = None, timeout: int = 25) -> Tuple[bool, str]:
         """Runs a raw adb command."""
         if not self.adb_path:
-            return False, "ADB nu a fost găsit."
+            return False, "ADB not found."
 
         adb_cmd = [self.adb_path]
         if serial:

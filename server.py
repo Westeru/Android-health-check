@@ -45,7 +45,7 @@ job_state: Dict[str, Any] = {
     "step": 0,
     "total_steps": 1,
     "percent": 0,
-    "current_task": "În așteptare",
+    "current_task": "Idle",
     "logs": [],
     "started_at": 0.0,
     "elapsed_sec": 0,
@@ -58,14 +58,17 @@ class ActionRequest(BaseModel):
     action: str
     serial: Optional[str] = None
     package: Optional[str] = None
+    lang: Optional[str] = "en"
 
 class WirelessPairRequest(BaseModel):
     pairing_addr: str
     pairing_code: str
     connect_addr: Optional[str] = None
+    lang: Optional[str] = "en"
 
 class WirelessConnectRequest(BaseModel):
     connect_addr: str
+    lang: Optional[str] = "en"
 
 def _update_progress(step: int, total: int, current_task: str, log_msg: str):
     now_str = datetime.datetime.now().strftime("%H:%M:%S")
@@ -82,15 +85,20 @@ def home(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")
 
 @app.get("/api/status")
-def get_status():
+def get_status(lang: str = "en"):
+    ro = (lang == "ro")
     available = adb.is_available()
-    devices = adb.get_devices() if available else []
+    devices = adb.get_devices(lang=lang) if available else []
     authorized = [d for d in devices if d["state"] == "device"]
 
-    phone_activity = {"busy": False, "active_tasks": [], "summary": "Nicio operațiune în fundal"}
+    phone_activity = {
+        "busy": False,
+        "active_tasks": [],
+        "summary": "Nicio operațiune în fundal" if ro else "Idle (no background tasks)"
+    }
     if authorized:
         try:
-            opt = PhoneOptimizer(adb, authorized[0]["serial"])
+            opt = PhoneOptimizer(adb, authorized[0]["serial"], lang=lang)
             phone_activity = opt.get_live_phone_activity()
         except Exception:
             pass
@@ -109,42 +117,50 @@ def get_status():
     }
 
 @app.get("/api/wireless/discover")
-def wireless_discover():
+def wireless_discover(lang: str = "en"):
     if not adb.is_available():
-        raise HTTPException(status_code=400, detail="ADB nu este disponibil.")
+        raise HTTPException(status_code=400, detail="ADB nu este disponibil." if lang == "ro" else "ADB is not available.")
     return adb.discover_wireless_services()
 
 @app.post("/api/wireless/pair")
 def wireless_pair(req: WirelessPairRequest):
+    lang = req.lang or "en"
     if not adb.is_available():
-        raise HTTPException(status_code=400, detail="ADB nu este disponibil.")
-    res = adb.pair_wireless(req.pairing_addr, req.pairing_code, req.connect_addr)
+        raise HTTPException(status_code=400, detail="ADB nu este disponibil." if lang == "ro" else "ADB is not available.")
+    res = adb.pair_wireless(req.pairing_addr, req.pairing_code, req.connect_addr, lang=lang)
     if not res.get("success"):
-        raise HTTPException(status_code=400, detail=res.get("message", "Eroare la asociere."))
+        raise HTTPException(status_code=400, detail=res.get("message", "Pairing failed."))
     return res
 
 @app.post("/api/wireless/connect")
 def wireless_connect(req: WirelessConnectRequest):
+    lang = req.lang or "en"
     if not adb.is_available():
-        raise HTTPException(status_code=400, detail="ADB nu este disponibil.")
-    res = adb.connect_wireless(req.connect_addr)
+        raise HTTPException(status_code=400, detail="ADB nu este disponibil." if lang == "ro" else "ADB is not available.")
+    res = adb.connect_wireless(req.connect_addr, lang=lang)
     if not res.get("success"):
-        raise HTTPException(status_code=400, detail=res.get("message", "Eroare la conectare."))
+        raise HTTPException(status_code=400, detail=res.get("message", "Connection failed."))
     return res
 
 @app.post("/api/wireless/disconnect")
 def wireless_disconnect(req: dict = None):
     addr = req.get("address") if req else None
-    return adb.disconnect_wireless(addr)
+    lang = (req.get("lang") if req else "en") or "en"
+    return adb.disconnect_wireless(addr, lang=lang)
 
 @app.get("/api/job-status")
-def get_job_status():
-    devices = adb.get_devices()
+def get_job_status(lang: str = "en"):
+    ro = (lang == "ro")
+    devices = adb.get_devices(lang=lang)
     authorized = [d for d in devices if d["state"] == "device"]
-    phone_activity = {"busy": False, "active_tasks": [], "summary": "Telefonul este în repaus"}
+    phone_activity = {
+        "busy": False,
+        "active_tasks": [],
+        "summary": "Telefonul este în repaus" if ro else "Idle (all background tasks completed)"
+    }
     if authorized:
         try:
-            opt = PhoneOptimizer(adb, authorized[0]["serial"])
+            opt = PhoneOptimizer(adb, authorized[0]["serial"], lang=lang)
             phone_activity = opt.get_live_phone_activity()
         except Exception:
             pass
@@ -159,56 +175,68 @@ def get_job_status():
     return snapshot
 
 @app.get("/api/packages")
-def list_installed_packages(serial: Optional[str] = None):
-    devices = adb.get_devices()
+def list_installed_packages(serial: Optional[str] = None, lang: str = "en"):
+    devices = adb.get_devices(lang=lang)
     authorized = [d for d in devices if d["state"] == "device"]
     if not authorized:
-        raise HTTPException(status_code=400, detail="Niciun dispozitiv autorizat conectat.")
+        raise HTTPException(status_code=400, detail="Niciun dispozitiv autorizat conectat." if lang == "ro" else "No authorized device connected.")
     target_serial = serial or authorized[0]["serial"]
-    opt = PhoneOptimizer(adb, target_serial)
+    opt = PhoneOptimizer(adb, target_serial, lang=lang)
     return {"packages": opt.get_installed_packages()}
 
 @app.post("/api/scan")
 def run_scan(req: dict = None):
     global last_report
     serial = req.get("serial") if req else None
+    lang = ((req.get("lang") if req else "en") or "en")
+    ro = (lang == "ro")
 
-    devices = adb.get_devices()
+    devices = adb.get_devices(lang=lang)
     if not devices:
-        raise HTTPException(status_code=400, detail="Niciun telefon conectat (USB sau Wi-Fi).")
+        raise HTTPException(
+            status_code=400,
+            detail="Niciun telefon conectat (USB sau Wi-Fi)." if ro else "No phone connected (USB or Wi-Fi)."
+        )
 
     authorized = [d for d in devices if d["state"] == "device"]
     if not authorized:
         raise HTTPException(
             status_code=400,
-            detail="Telefonul este conectat dar neautorizat. Deblochează ecranul telefonului și apasă pe 'Permiteți' (Allow USB/Wireless debugging)."
+            detail=(
+                "Telefonul este conectat dar neautorizat. Deblochează ecranul telefonului și apasă pe 'Permiteți' (Allow USB/Wireless debugging)."
+                if ro else
+                "Phone is connected but unauthorized. Unlock your phone screen and tap 'Allow' on the USB/Wireless debugging prompt."
+            )
         )
 
     target_serial = serial or authorized[0]["serial"]
     try:
-        diag = PhoneDiagnostics(adb, target_serial)
+        diag = PhoneDiagnostics(adb, target_serial, lang=lang)
         report = diag.run_full_scan()
         last_report = report
         return report
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Eroare internă la scanare: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"{'Eroare internă la scanare' if ro else 'Internal scan error'}: {str(e)}"
+        )
 
 @app.get("/api/report")
 def get_report():
     if not last_report:
-        raise HTTPException(status_code=404, detail="Nu s-a efectuat încă nicio scanare.")
+        raise HTTPException(status_code=404, detail="No scan has been run yet.")
     return last_report
 
-def _execute_job_worker(action: str, target_serial: str, package: Optional[str]):
-    optimizer = PhoneOptimizer(adb, target_serial, progress_cb=_update_progress)
+def _execute_job_worker(action: str, target_serial: str, package: Optional[str], lang: str = "en"):
+    ro = (lang == "ro")
+    optimizer = PhoneOptimizer(adb, target_serial, progress_cb=_update_progress, lang=lang)
     try:
         if action == "deep_boost_all":
             culprits = []
             if last_report and "anrs_and_crashes" in last_report:
                 culprits = [c["package"] for c in last_report["anrs_and_crashes"].get("top_culprits", [])]
             else:
-                # Quick scan of exit-info if user didn't scan first
-                diag = PhoneDiagnostics(adb, target_serial)
+                diag = PhoneDiagnostics(adb, target_serial, lang=lang)
                 anrs = diag.get_anr_and_crash_logs()
                 culprits = [c["package"] for c in anrs.get("top_culprits", [])]
             res = optimizer.run_deep_boost_all(culprit_packages=culprits)
@@ -232,7 +260,7 @@ def _execute_job_worker(action: str, target_serial: str, package: Optional[str])
             res = optimizer.cool_down_cpu()
         elif action == "art_optimize":
             res = optimizer.run_art_optimization()
-        elif action == "fstrim":
+        elif action in ("fstrim", "storage_clean"):
             res = optimizer.run_fstrim()
         elif action == "trim_caches":
             res = optimizer.trim_system_caches()
@@ -243,16 +271,24 @@ def _execute_job_worker(action: str, target_serial: str, package: Optional[str])
         elif action == "reboot":
             res = optimizer.reboot_device()
         else:
-            res = {"success": False, "title": "Eroare", "message": f"Acțiune necunoscută: {action}"}
+            res = {
+                "success": False,
+                "title": "Eroare" if ro else "Error",
+                "message": f"{'Acțiune necunoscută' if ro else 'Unknown action'}: {action}"
+            }
 
         with job_lock:
             job_state["running"] = False
             job_state["completed"] = True
             job_state["percent"] = 100
             job_state["success"] = res.get("success", True)
-            job_state["title"] = res.get("title", "Finalizat")
-            job_state["result_message"] = res.get("message", "Acțiune finalizată.")
-            job_state["current_task"] = "✅ FINALIZAT CU SUCCES!" if res.get("success", True) else "⚠️ Finalizat cu erori"
+            job_state["title"] = res.get("title", "Finalizat" if ro else "Completed")
+            job_state["result_message"] = res.get("message", "Acțiune finalizată." if ro else "Action completed.")
+            job_state["current_task"] = (
+                ("✅ FINALIZAT CU SUCCES!" if res.get("success", True) else "⚠️ Finalizat cu erori")
+                if ro else
+                ("✅ COMPLETED SUCCESSFULLY!" if res.get("success", True) else "⚠️ Completed with warnings")
+            )
             job_state["elapsed_sec"] = round(time.time() - job_state["started_at"], 1)
     except Exception as e:
         now_str = datetime.datetime.now().strftime("%H:%M:%S")
@@ -260,24 +296,32 @@ def _execute_job_worker(action: str, target_serial: str, package: Optional[str])
             job_state["running"] = False
             job_state["completed"] = True
             job_state["success"] = False
-            job_state["current_task"] = f"❌ Eroare: {str(e)}"
+            job_state["current_task"] = f"❌ {'Eroare' if ro else 'Error'}: {str(e)}"
             job_state["result_message"] = str(e)
-            job_state["logs"].append(f"[{now_str}] ❌ Eroare la execuție: {str(e)}")
+            job_state["logs"].append(f"[{now_str}] ❌ {'Eroare la execuție' if ro else 'Execution error'}: {str(e)}")
             job_state["elapsed_sec"] = round(time.time() - job_state["started_at"], 1)
 
 @app.post("/api/optimize")
 def run_optimization(req: ActionRequest):
-    devices = adb.get_devices()
+    lang = req.lang or "en"
+    ro = (lang == "ro")
+    devices = adb.get_devices(lang=lang)
     authorized = [d for d in devices if d["state"] == "device"]
     if not authorized:
-        raise HTTPException(status_code=400, detail="Niciun dispozitiv autorizat conectat.")
+        raise HTTPException(
+            status_code=400,
+            detail="Niciun dispozitiv autorizat conectat." if ro else "No authorized device connected."
+        )
 
     with job_lock:
         if job_state["running"]:
             return {
                 "started": False,
                 "already_running": True,
-                "message": "O optimizare este deja în curs de desfășurare! Urmărește consola live de pe ecran."
+                "message": (
+                    "O optimizare este deja în curs de desfășurare! Urmărește consola live de pe ecran."
+                    if ro else "An optimization is already running! Check the live execution console on screen."
+                )
             }
 
         target_serial = req.serial or authorized[0]["serial"]
@@ -285,12 +329,17 @@ def run_optimization(req: ActionRequest):
         job_state["running"] = True
         job_state["completed"] = False
         job_state["action"] = req.action
-        job_state["title"] = f"Execuție: {req.action}"
+        job_state["title"] = f"{'Execuție' if ro else 'Running'}: {req.action}"
         job_state["step"] = 0
         job_state["total_steps"] = 1
         job_state["percent"] = 5
-        job_state["current_task"] = "Inițializare conexiune ADB cu telefonul..."
-        job_state["logs"] = [f"[{now_str}] 🚀 S-a pornit acțiunea '{req.action}' pe dispozitivul {target_serial}..."]
+        job_state["current_task"] = (
+            "Inițializare conexiune ADB cu telefonul..."
+            if ro else "Initializing ADB connection with device..."
+        )
+        job_state["logs"] = [
+            f"[{now_str}] 🚀 {'S-a pornit acțiunea' if ro else 'Started action'} '{req.action}' {'pe dispozitivul' if ro else 'on device'} {target_serial}..."
+        ]
         job_state["started_at"] = time.time()
         job_state["elapsed_sec"] = 0
         job_state["success"] = True
@@ -298,12 +347,15 @@ def run_optimization(req: ActionRequest):
 
     worker = threading.Thread(
         target=_execute_job_worker,
-        args=(req.action, target_serial, req.package),
+        args=(req.action, target_serial, req.package, lang),
         daemon=True
     )
     worker.start()
 
     return {
         "started": True,
-        "message": "Optimizarea a pornit! Urmărește progresul pas cu pas în panoul live."
+        "message": (
+            "Optimizarea a pornit! Urmărește progresul pas cu pas în panoul live."
+            if ro else "Optimization started! Watch real-time step-by-step progress in the live console."
+        )
     }

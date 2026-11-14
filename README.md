@@ -1,69 +1,74 @@
 # Android Health & Performance Doctor 🩺📱
-### Suită universală de diagnosticare și optimizare prin ADB (USB & Wireless Wi-Fi) pentru orice telefon Android
 
-**Android Health Doctor** este o aplicație Web + CLI (fără necesitate de Root) concepută pentru a depista și repara cauzele reale pentru care un telefon Android (Samsung Galaxy, Google Pixel, Xiaomi, OnePlus, Motorola, Asus, Nothing etc.) începe să meargă sacadat (*UI Jank / Frame Drops*), să rămână fără memorie RAM/ZRAM sau să afișeze erori **„Application Not Responding” (ANR)**.
+🌐 **Language / Limba:** **[🇬🇧 English](README.md)** | **[🇷🇴 Română](README.ro.md)**
 
----
+### Universal ADB Diagnostic & Optimization Suite (USB & Wireless Wi-Fi) for Any Android Device
 
-## 🔍 Ce investighează și repară aplicația?
-
-1. **Bazele de Date de Sistem Blocate (`android.process.acore`, `MediaStore`, `Downloads`, `GSF`)**:
-   - Când baza de date SQLite de contacte (`com.android.providers.contacts` / `acore`) sau indexul media (`com.android.providers.media.module`) se corupe ori intră în buclă de sincronizare, orice aplicație care accesează contactele, tastatura sau fișierele (WhatsApp, Telefon, Mesaje, Galerie, Chrome) îngheață câteva secunde.
-   - Oferă reconstrucția curată a bazelor de date de sistem și recompilarea lor în mod nativ `speed` (contactele din contul Google/Cloud se resincronizează automat).
-
-2. **Analiză Sacadare Ecran (GPU Frame Drops / UI Jank) & Hook-uri Accesibilitate**:
-   - Interoghează `dumpsys gfxinfo` pentru a calcula procentul de cadre întârziate (*Janky Frames %*) și timpii de randare (95th / 99th percentile) pentru fiecare aplicație.
-   - Detectează automat **Serviciile de Accesibilitate** active (autoclickere, utilitare overlay) care interceptează fiecare atingere pe ecran și cauzează micro-stutter sever la scroll.
-   - Detectează automat **Launcher-ul implicit al telefonului** (One UI Home, Pixel Launcher, MIUI/HyperOS Home, Nova etc.), curăță cache-ul de shadere și compilează nativ în mod `speed` Launcher-ul, `SystemUI` și `Android System WebView`.
-
-3. **Reparare Profundă pentru Orice Aplicație Instalată (Fără Pierderea Contului)**:
-   - Include un explorator al tuturor aplicațiilor instalate pe telefon.
-   - Repară aplicațiile care îngheață prin: oprirea firelor blocate (`am force-stop`), ștergerea exclusivă a memoriei cache (`pm clear --cache-only`, păstrând datele și autentificarea!) și compilarea Ahead-of-Time (`cmd package compile -m speed -f`).
-   - Permite restricționarea rulării în fundal (`Standby Bucket: restricted` + `RUN_ANY_IN_BACKGROUND ignore`) pentru aplicațiile care consumă baterie și RAM în mod parazit.
-
-4. **Presiunea pe Memoria RAM, ZRAM Swap & Kernel PSI**:
-   - Monitorizează gradul de ocupare ZRAM și indicatorii *Pressure Stall Information* (`/proc/pressure/{cpu,memory,io}`).
-   - Oprește serviciile parazite din fundal (servicii AI locale neutilizate, telemetrie, jurnale de debugging excesive) și activează *Android Cached App Freezer*.
-
-5. **Conectare Dublă: Cablu USB sau Wireless ADB (100% fără cablu)**:
-   - Ideal și pentru telefoanele cu portul USB uzat sau defect: include **auto-detecție mDNS** (`adb mdns services`), asociere cu cod din 6 cifre (`adb pair`) și conectare directă prin Wi-Fi (`adb connect`).
+**Android Health Doctor** is a rootless Web + CLI diagnostic and repair suite designed to identify and fix the real root causes behind Android UI stutter (*jank / frame drops*), RAM/ZRAM exhaustion, corrupted system databases, and **"Application Not Responding" (ANR)** freezes across all Android brands (**Samsung Galaxy, Google Pixel, Xiaomi, OnePlus, Motorola, Asus, Nothing, Sony**, etc.).
 
 ---
 
-## 🚀 Instalare și Utilizare
+## ✨ Key Features & Deep Diagnostics
 
-### 1. Cerințe
+1. **System Content Providers & SQLite Database Repair (`android.process.acore`, `MediaStore`, `Downloads`, `GSF`)**:
+   - When the Android Contacts database (`com.android.providers.contacts` / `acore`) or MediaStore index (`com.android.providers.media.module`) becomes corrupted or stuck in a sync loop, every app that queries contacts, keyboard autofill, or storage (WhatsApp, Phone, Messages, Gallery, Chrome) freezes for seconds at a time.
+   - Rebuilds corrupted local SQLite provider databases cleanly and AOT-compiles them in native `speed` mode (cloud contacts re-sync automatically within seconds).
+
+2. **GPU Frame Drop (UI Jank) Analysis & Accessibility Hook Detection**:
+   - Parses `dumpsys gfxinfo` to measure **Janky Frames (%)** and 95th/99th percentile frame render times per application.
+   - Detects active **Accessibility Services** (auto-clickers, overlay utilities, macro tools) that intercept touch input and cause severe scrolling micro-stutter and `Input dispatching timed out` ANRs.
+   - Automatically detects the **device's default home launcher** (One UI Home, Pixel Launcher, MIUI/HyperOS Home, Nova, etc.), clears corrupted shader caches, and forces native `speed` compilation on the Launcher, `SystemUI`, and `Android System WebView`.
+
+3. **Deep Per-App Repair (Without Wiping User Accounts)**:
+   - Includes a searchable **Installed App Explorer** for all apps on the device.
+   - **Safe Repair (`🔧 Repair & Speed Compile`)**: Force-stops hung threads (`am force-stop`), clears *only* corrupted cache (`pm clear --cache-only`, preserving login sessions and user data!), and compiles the package Ahead-of-Time (`cmd package compile -m speed -f`).
+   - **Background Restriction (`🛑 Restrict Background`)**: Places parasitic background apps into `Standby Bucket: restricted` and blocks `RUN_ANY_IN_BACKGROUND`.
+
+4. **RAM, ZRAM Swap & Kernel PSI (Pressure Stall Information)**:
+   - Monitors RAM and ZRAM saturation alongside Linux kernel `/proc/pressure/{cpu,memory,io}` stall metrics.
+   - Stops parasitic background daemons (unused local AI services, telemetry, excessive debug ring buffers) and enables the Android *Cached App Freezer*.
+
+5. **Dual Connection Mode: USB Cable & Wireless ADB (100% Cable-Free)**:
+   - Perfect for devices with worn or broken USB ports: includes automatic **mDNS discovery** (`adb mdns services`), 6-digit pairing code support (`adb pair`), and direct Wi-Fi connection (`adb connect`).
+   - Built-in **Real-Time Execution Console** with live step-by-step progress bar, timer, and live background compiler (`dex2oat64` / `fstrim`) monitoring.
+   - Built-in **🇬🇧 EN / 🇷🇴 RO** instant language switcher in the Web UI.
+
+---
+
+## 🚀 Quick Start
+
+### 1. Prerequisites
 - **Python 3.9+**
-- **Android Platform Tools (`adb`)** instalat în `PATH` sau în `%LOCALAPPDATA%\Android\Sdk\platform-tools`
-- Instalare dependențe Python:
+- **Android Platform Tools (`adb`)** installed in your system `PATH` or in `%LOCALAPPDATA%\Android\Sdk\platform-tools`
+- Install Python dependencies:
   ```bash
   pip install -r requirements.txt
   ```
 
-### 2. Pornire Interfață Web (Recomandat)
-Rulează `run.bat` (pe Windows) sau din terminal:
+### 2. Launch Web UI (Recommended)
+Double-click `run.bat` (on Windows) or run:
 ```bash
 python main.py
 ```
-Se va deschide automat în browser la `http://127.0.0.1:8899` cu **Consolă de Execuție Live** pas cu pas.
+The dashboard will automatically open at `http://127.0.0.1:8899`.
 
-### 3. Pornire în mod Terminal (CLI)
+### 3. Launch CLI Mode
 ```bash
-# Scanare completă
+# Run full diagnostic scan (English default, add --ro for Romanian)
 python cli.py
 
-# Scanare + aplicare automată a reparațiilor
+# Run scan + automatically apply all deep repairs
 python cli.py --fix
 
-# Conectare Wireless din CLI (fără cablu USB)
+# Pair and connect over Wireless ADB from CLI
 python cli.py --pair 192.168.1.105:39123 482910 --connect 192.168.1.105:41555
 ```
 
 ---
 
-## 📱 Cum activezi Depanarea USB / Wireless pe telefon?
-1. Deschide **Setări** &rarr; **Despre telefon** (*About phone*).
-2. Apasă rapid de **7 ori** pe **Număr versiune** (*Build number*) până apare mesajul *„Acum ești un dezvoltator!”*.
-3. Mergi în **Setări** &rarr; **Sistem / Setări suplimentare** &rarr; **Opțiuni pentru dezvoltatori**:
-   - **Pentru USB**: Activează **Depanare USB** (*USB debugging*).
-   - **Pentru Wi-Fi (fără cablu)**: Activează **Depanare wireless** (*Wireless debugging*) și folosește panoul **📶 Conectare Wireless** din aplicație.
+## 📱 How to Enable USB or Wireless Debugging on Android
+1. Open **Settings** &rarr; **About phone**.
+2. Tap **Build number** (or MIUI/OS Version) **7 times** rapidly until you see *"You are now a developer!"*.
+3. Open **Settings** &rarr; **System / Additional settings** &rarr; **Developer options**:
+   - **For USB Cable**: Enable **USB debugging**, connect the cable, and tap **Allow** on the phone prompt.
+   - **For Wi-Fi (No Cable)**: Enable **Wireless debugging**, tap on the **Wireless debugging** text to open its menu, and use the **📶 Wireless ADB** panel in the web app.

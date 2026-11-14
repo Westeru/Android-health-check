@@ -4,9 +4,8 @@ from typing import Dict, Any, List, Optional
 from adb_manager import AdbManager
 
 class PhoneDiagnostics:
-    """Performs deep health, UI jank/stutter, and freeze diagnostics on any connected Android device."""
+    """Performs deep health, UI jank/stutter, and freeze diagnostics on any connected Android device (EN primary / RO supported)."""
 
-    # Map shared Android process names to their underlying package names
     PROCESS_TO_PACKAGE_MAP = {
         "android.process.acore": "com.android.providers.contacts",
         "android.process.media": "com.android.providers.media.module",
@@ -14,8 +13,17 @@ class PhoneDiagnostics:
         "com.google.process.gapps": "com.google.android.gms",
     }
 
-    # Known system provider packages whose SQLite database corruption freezes dependent apps
-    SYSTEM_PROVIDER_PACKAGES = {
+    SYSTEM_PROVIDER_LABELS_EN = {
+        "com.android.providers.contacts": "Contacts & Call Log Database (acore)",
+        "com.android.providers.media.module": "MediaStore & File Indexer",
+        "com.android.providers.media": "MediaStore Indexer",
+        "com.android.providers.downloads": "Downloads Provider",
+        "com.android.providers.calendar": "Calendar Storage Provider",
+        "com.google.android.gsf": "Google Services Framework (Sync)",
+        "com.google.android.gms": "Google Play Services",
+    }
+
+    SYSTEM_PROVIDER_LABELS_RO = {
         "com.android.providers.contacts": "Baza de date Contacte & Apeluri (acore)",
         "com.android.providers.media.module": "Indexul Media & Fișiere (MediaStore)",
         "com.android.providers.media": "Indexul Media (MediaStore)",
@@ -25,9 +33,11 @@ class PhoneDiagnostics:
         "com.google.android.gms": "Google Play Services",
     }
 
-    def __init__(self, adb: AdbManager, serial: Optional[str] = None):
+    def __init__(self, adb: AdbManager, serial: Optional[str] = None, lang: str = "en"):
         self.adb = adb
         self.serial = serial
+        self.lang = lang if lang in ("en", "ro") else "en"
+        self.ro = (self.lang == "ro")
 
     def run_full_scan(self) -> Dict[str, Any]:
         """Runs the complete diagnostic suite and aggregates findings."""
@@ -46,6 +56,7 @@ class PhoneDiagnostics:
 
         return {
             "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "lang": self.lang,
             "device": device_info,
             "storage": storage,
             "memory": memory,
@@ -64,7 +75,7 @@ class PhoneDiagnostics:
             val = out.strip() if ok and out else ""
             return val if val else fallback
 
-        model = get_prop("ro.product.model", "Dispozitiv Android")
+        model = get_prop("ro.product.model", "Dispozitiv Android" if self.ro else "Android Device")
         brand = get_prop("ro.product.brand", "Android").capitalize()
         device_codename = get_prop("ro.product.device", "generic")
         android_ver = get_prop("ro.build.version.release", "N/A")
@@ -73,8 +84,7 @@ class PhoneDiagnostics:
         build_id = get_prop("ro.build.id", "N/A")
         soc_model = get_prop("ro.soc.model") or get_prop("ro.board.platform") or get_prop("ro.hardware") or "ARM64 SoC"
 
-        # Uptime
-        uptime_str = "Necunoscut"
+        uptime_str = "Necunoscut" if self.ro else "Unknown"
         uptime_days = 0.0
         ok, uptime_out = self.adb.run_shell("cat /proc/uptime", self.serial, timeout=5)
         if ok and uptime_out:
@@ -83,7 +93,8 @@ class PhoneDiagnostics:
                 uptime_days = round(seconds / 86400, 1)
                 hours = int(seconds // 3600)
                 minutes = int((seconds % 3600) // 60)
-                uptime_str = f"{hours // 24}z {hours % 24}h {minutes}m"
+                day_unit = "z" if self.ro else "d"
+                uptime_str = f"{hours // 24}{day_unit} {hours % 24}h {minutes}m"
             except Exception:
                 pass
 
@@ -133,13 +144,19 @@ class PhoneDiagnostics:
         elif percent_used >= 80 or (free_gb > 0 and free_gb < 15.0):
             status = "warning"
 
+        summary = (
+            f"{used_gb} GB folosiți din {total_gb} GB ({percent_used}% • {free_gb} GB liberi)"
+            if self.ro else
+            f"{used_gb} GB used of {total_gb} GB ({percent_used}% • {free_gb} GB free)"
+        )
+
         return {
             "total_gb": total_gb,
             "used_gb": used_gb,
             "free_gb": free_gb,
             "percent_used": percent_used,
             "status": status,
-            "summary": f"{used_gb} GB folosiți din {total_gb} GB ({percent_used}% • {free_gb} GB liberi)"
+            "summary": summary
         }
 
     def get_memory_info(self) -> Dict[str, Any]:
@@ -209,7 +226,7 @@ class PhoneDiagnostics:
         }
 
     def get_ui_fluency_and_jank(self) -> Dict[str, Any]:
-        """Analyzes why the phone feels choppy ('sacadat'): refresh rate, animation scales, and GPU frame drops (jank)."""
+        """Analyzes refresh rate, animation scales, and GPU frame drops (jank)."""
         def get_setting(namespace: str, key: str, default: str = "") -> str:
             ok, out = self.adb.run_shell(f"settings get {namespace} {key}", self.serial, timeout=5)
             val = out.strip() if ok and out else ""
@@ -299,7 +316,7 @@ class PhoneDiagnostics:
         }
 
     def get_psi_and_accessibility(self) -> Dict[str, Any]:
-        """Checks Accessibility hooks (major cause of lag/sacadare), I/O & Memory stall pressure, and Battery Saver."""
+        """Checks Accessibility hooks, I/O & Memory stall pressure, and Battery Saver."""
         accessibility_services = []
         ok_acc, acc_out = self.adb.run_shell("settings get secure enabled_accessibility_services", self.serial, timeout=5)
         if ok_acc and acc_out:
@@ -400,11 +417,16 @@ class PhoneDiagnostics:
 
                     if "ANR" in reason_name or "FREEZER" in reason_name or "EXCESSIVE_RESOURCE" in reason_name:
                         app_problem_counts[package] = app_problem_counts.get(package, 0) + 1
+                        anr_label = ("ANR (Înghețare)" if self.ro else "ANR (Freeze)") if "ANR" in reason_name else reason_name
+                        default_detail = (
+                            "Firul principal UI blocat (Input dispatch timed out)"
+                            if self.ro else "Main UI thread blocked (Input dispatch timed out)"
+                        )
                         anr_events.append({
                             "package": package,
-                            "type": "ANR (Înghețare)" if "ANR" in reason_name else reason_name,
+                            "type": anr_label,
                             "date": date_str,
-                            "details": description or subreason or "Firul principal UI blocat (Input dispatch timed out)"
+                            "details": description or subreason or default_detail
                         })
                     elif "CRASH" in reason_name or "INITIALIZATION_FAILURE" in reason_name:
                         app_problem_counts[package] = app_problem_counts.get(package, 0) + 1
@@ -412,7 +434,7 @@ class PhoneDiagnostics:
                             "package": package,
                             "type": reason_name,
                             "date": date_str,
-                            "details": description or subreason or "Eroare internă aplicație"
+                            "details": description or subreason or ("Eroare internă aplicație" if self.ro else "Application crash")
                         })
 
         sorted_culprits = sorted(app_problem_counts.items(), key=lambda x: x[1], reverse=True)
@@ -455,13 +477,13 @@ class PhoneDiagnostics:
             if m_th:
                 thermal_headroom_status = int(m_th.group(1))
 
-        thermal_status = "Răcoros / Fără limitări"
+        thermal_status = "Răcoros / Fără limitări" if self.ro else "Cool / No Throttling"
         thermal_severity = "normal"
         if battery_temp_c >= 41.5 or thermal_headroom_status >= 3:
-            thermal_status = "Throttling Sever Activ (Procesor limitat termic!)"
+            thermal_status = "Throttling Sever Activ (Procesor limitat termic!)" if self.ro else "Severe Thermal Throttling Active!"
             thermal_severity = "critical"
         elif battery_temp_c >= 38.0 or thermal_headroom_status >= 1:
-            thermal_status = f"Cald (Limitare parțială {soc_name})"
+            thermal_status = f"Cald (Limitare parțială {soc_name})" if self.ro else f"Warm (Light {soc_name} Throttling)"
             thermal_severity = "warning"
 
         top_cpu = []
@@ -489,7 +511,7 @@ class PhoneDiagnostics:
     def get_battery_info(self) -> Dict[str, Any]:
         """Gets battery health and charge cycle count."""
         level = 0
-        health = "Bună"
+        health = "Bună" if self.ro else "Good"
         cycles = "N/A"
 
         ok_bat, bat_out = self.adb.run_shell("dumpsys battery", self.serial)
@@ -500,8 +522,12 @@ class PhoneDiagnostics:
             health_match = re.search(r"health:\s*(\d+)", bat_out)
             if health_match:
                 h_val = int(health_match.group(1))
-                health_map = {1: "Necunoscută", 2: "Bună (Optim)", 3: "Supraîncălzire", 4: "Uzată / Defectă", 5: "Supratensiune"}
-                health = health_map.get(h_val, "Normală")
+                if self.ro:
+                    health_map = {1: "Necunoscută", 2: "Bună (Optim)", 3: "Supraîncălzire", 4: "Uzată / Defectă", 5: "Supratensiune"}
+                    health = health_map.get(h_val, "Normală")
+                else:
+                    health_map = {1: "Unknown", 2: "Good (Optimal)", 3: "Overheat", 4: "Dead / Degraded", 5: "Overvoltage"}
+                    health = health_map.get(h_val, "Normal")
 
         ok_cyc, cyc_out = self.adb.run_shell("cat /sys/class/power_supply/battery/cycle_count", self.serial)
         if ok_cyc and cyc_out and cyc_out.strip().isdigit():
@@ -532,16 +558,24 @@ class PhoneDiagnostics:
         score = 100
         issues = []
         recommendations = []
+        provider_map = self.SYSTEM_PROVIDER_LABELS_RO if self.ro else self.SYSTEM_PROVIDER_LABELS_EN
 
         # 0. Master 1-Click Deep Fix Recommendation
         recommendations.append({
             "severity": "urgent",
-            "title": "⚡ Super-Optimizare Completă (Anti-Sacadare & Deblocare Aplicații)",
-            "description": "Rulează automat protocolul complet de reparație: curăță cache-ul corupt din SystemUI, Launcher și Android WebView, eliberează memoria RAM/ZRAM, setează animațiile la 0.5x (instant), activează rata de refresh maximă, optimizează stocarea flash (fstrim) și recompilează nativ (în mod 'speed') toate aplicațiile cu blocaje.",
+            "title": (
+                "⚡ Super-Optimizare Completă (Anti-Sacadare & Deblocare Aplicații)"
+                if self.ro else "⚡ Complete 1-Click Super Boost (Anti-Stutter & App Unfreeze)"
+            ),
+            "description": (
+                "Rulează automat protocolul complet de reparație: curăță cache-ul corupt din SystemUI, Launcher și Android WebView, eliberează memoria RAM/ZRAM, setează animațiile la 0.5x (instant), activează rata de refresh maximă, optimizează stocarea flash (fstrim) și recompilează nativ (în mod 'speed') toate aplicațiile cu blocaje."
+                if self.ro else
+                "Automatically runs the full repair protocol: clears corrupted caches in SystemUI, Launcher, and Android WebView, frees RAM/ZRAM, sets snappy 0.5x animations, enables peak refresh rate, runs UFS flash TRIM (fstrim), and AOT-compiles ('speed' mode) all freezing apps."
+            ),
             "action_type": "deep_boost_all"
         })
 
-        # 1. UI Fluency / Stutter ("Sacadat") Check
+        # 1. UI Fluency / Stutter Check
         jank_pct = ui_fluency.get("global_jank_percent", 0.0)
         janky_apps = ui_fluency.get("janky_apps", [])
         smooth_on = ui_fluency.get("smooth_display_enabled", True)
@@ -550,16 +584,32 @@ class PhoneDiagnostics:
         if jank_pct >= 10.0 or not smooth_on:
             score -= 15
             if not smooth_on:
-                issues.append(f"Ecranul rulează la doar {ui_fluency.get('peak_refresh_rate', 60)}Hz (rata de refresh înaltă 90/120Hz este oprită) — cauzează senzația de mișcare sacadată")
+                issues.append(
+                    f"Ecranul rulează la doar {ui_fluency.get('peak_refresh_rate', 60)}Hz (rata de refresh înaltă 90/120Hz este oprită)"
+                    if self.ro else
+                    f"Display is capped at {ui_fluency.get('peak_refresh_rate', 60)}Hz (high 90/120Hz refresh rate is disabled)"
+                )
             if jank_pct >= 10.0:
                 worst_jank = ", ".join([f"{a['package']} ({a['jank_percent']}%)" for a in janky_apps[:3]])
-                issues.append(f"Pierderi ridicate de cadre UI (Frame Drops / Sacadare: {jank_pct}% global) în: {worst_jank}")
+                issues.append(
+                    f"Pierderi ridicate de cadre UI (Frame Drops / Sacadare: {jank_pct}% global) în: {worst_jank}"
+                    if self.ro else
+                    f"High GPU UI frame drops (Global Jank: {jank_pct}%) in: {worst_jank}"
+                )
 
         if anim_scale >= 1.0 or not smooth_on or jank_pct >= 8.0:
             recommendations.append({
                 "severity": "urgent" if (jank_pct >= 15.0 or not smooth_on) else "recomandat",
-                "title": "Eliminare Mișcare Sacadată (Boost 120Hz + Animații 0.5x + Optimizare Launcher/WebView)",
-                "description": f"Rata de cadre pierdute (jank) este {jank_pct}%, iar scara animațiilor este {anim_scale}x. Această acțiune activează rata maximă de refresh, scurtează animațiile la 0.5x pentru răspuns instant și recompilează Launcher-ul telefonului, SystemUI și Android System WebView.",
+                "title": (
+                    "Eliminare Mișcare Sacadată (Boost 120Hz + Animații 0.5x + Optimizare Launcher/WebView)"
+                    if self.ro else
+                    "Fix UI Stutter & Frame Drops (120Hz Boost + 0.5x Animations + Launcher/WebView Speed)"
+                ),
+                "description": (
+                    f"Rata de cadre pierdute (jank) este {jank_pct}%, iar scara animațiilor este {anim_scale}x. Această acțiune activează rata maximă de refresh, scurtează animațiile la 0.5x pentru răspuns instant și recompilează Launcher-ul telefonului, SystemUI și Android System WebView."
+                    if self.ro else
+                    f"Global frame jank is {jank_pct}% and animation scale is {anim_scale}x. This action enables peak refresh rate, sets snappy 0.5x animations, and AOT-compiles the device's Home Launcher, SystemUI, and Android System WebView."
+                ),
                 "action_type": "fix_ui_stutter"
             })
 
@@ -568,11 +618,23 @@ class PhoneDiagnostics:
         if acc_services:
             score -= 12
             acc_names = ", ".join([a["package"] for a in acc_services])
-            issues.append(f"Servicii de Accesibilitate active ({acc_names}) — interceptează fiecare atingere pe ecran și provoacă sacadare în scroll și ANR-uri!")
+            issues.append(
+                f"Servicii de Accesibilitate active ({acc_names}) — interceptează fiecare atingere pe ecran și provoacă sacadare în scroll și ANR-uri!"
+                if self.ro else
+                f"Active Accessibility Services ({acc_names}) — intercept touch input and cause severe scroll stutter and ANRs!"
+            )
             recommendations.append({
                 "severity": "urgent",
-                "title": f"Dezactivează Serviciile de Accesibilitate care încetinesc ecranul ({len(acc_services)} active)",
-                "description": f"Următoarele pachete interceptează interfața grafică în timp real: {acc_names}. Serviciile de accesibilitate (autoclickere, utilitare overlay) cauzează micro-stutter sever la scroll și blocaje 'Input dispatching timed out'.",
+                "title": (
+                    f"Dezactivează Serviciile de Accesibilitate care încetinesc ecranul ({len(acc_services)} active)"
+                    if self.ro else
+                    f"Disable Accessibility Services Causing Touch & Scroll Lag ({len(acc_services)} active)"
+                ),
+                "description": (
+                    f"Următoarele pachete interceptează interfața grafică în timp real: {acc_names}. Serviciile de accesibilitate (autoclickere, utilitare overlay) cauzează micro-stutter sever la scroll și blocaje 'Input dispatching timed out'."
+                    if self.ro else
+                    f"The following packages hook into every UI event in real time: {acc_names}. Accessibility overlays and auto-clickers cause severe micro-stutter and 'Input dispatching timed out' ANRs."
+                ),
                 "action_type": "disable_accessibility"
             })
 
@@ -584,27 +646,45 @@ class PhoneDiagnostics:
             penalty = min(total_anrs * 6 + total_crashes * 3, 30)
             score -= penalty
             top_names = ", ".join([c["package"] for c in culprits[:4]])
-            issues.append(f"Detectate {total_anrs} înghețări (ANR) și {total_crashes} crash-uri recente în: {top_names}")
+            issues.append(
+                f"Detectate {total_anrs} înghețări (ANR) și {total_crashes} crash-uri recente în: {top_names}"
+                if self.ro else
+                f"Detected {total_anrs} freezes (ANR) and {total_crashes} crashes (last 24h) in: {top_names}"
+            )
 
-            has_provider_issue = False
             for c in culprits[:5]:
                 pkg = c["package"]
                 count = c["count"]
-                if pkg in self.SYSTEM_PROVIDER_PACKAGES:
-                    has_provider_issue = True
-                    provider_label = self.SYSTEM_PROVIDER_PACKAGES[pkg]
+                if pkg in provider_map:
+                    provider_label = provider_map[pkg]
                     recommendations.append({
                         "severity": "urgent",
-                        "title": f"📇 Reconstrucție Baze de Date Sistem: {provider_label} ({count} blocaje)",
-                        "description": f"Componenta de sistem {pkg} ({provider_label}) are baza de date SQLite blocată sau într-o buclă de sincronizare, ceea ce face ca aplicațiile care depind de ea (WhatsApp, Telefon, Galerie, Mesaje, Tastatură) să înghețe! Apasă pentru reconstrucția curată a bazelor de date de sistem.",
+                        "title": (
+                            f"📇 Reconstrucție Baze de Date Sistem: {provider_label} ({count} blocaje)"
+                            if self.ro else
+                            f"📇 Rebuild System Database: {provider_label} ({count} incidents)"
+                        ),
+                        "description": (
+                            f"Componenta de sistem {pkg} ({provider_label}) are baza de date SQLite blocată sau într-o buclă de sincronizare, ceea ce face ca aplicațiile care depind de ea (WhatsApp, Telefon, Galerie, Mesaje, Tastatură) să înghețe! Apasă pentru reconstrucția curată a bazelor de date de sistem."
+                            if self.ro else
+                            f"System provider {pkg} ({provider_label}) has a locked SQLite database or sync loop, causing dependent apps (WhatsApp, Phone, Gallery, Messages, Keyboard) to freeze! Click to cleanly rebuild system provider databases."
+                        ),
                         "action_type": "fix_contacts_acore",
                         "package": pkg
                     })
                 else:
                     recommendations.append({
                         "severity": "urgent" if count >= 2 else "recomandat",
-                        "title": f"Repară profund aplicația (fără ștergerea contului): {pkg}",
-                        "description": f"S-a blocat sau a crăpat de {count} ori în ultimele 24h. Această reparație oprește procesele blocate, șterge DOAR cache-ul corupt (păstrând datele și logarea!) și forțează recompilarea nativă AOT ('speed') a pachetului.",
+                        "title": (
+                            f"Repară profund aplicația (fără ștergerea contului): {pkg}"
+                            if self.ro else
+                            f"Deep Repair App (Preserves Account & Data): {pkg}"
+                        ),
+                        "description": (
+                            f"S-a blocat sau a crăpat de {count} ori în ultimele 24h. Această reparație oprește procesele blocate, șterge DOAR cache-ul corupt (păstrând datele și logarea!) și forțează recompilarea nativă AOT ('speed') a pachetului."
+                            if self.ro else
+                            f"Froze or crashed {count} times in the last 24h. This repair stops hung threads, clears ONLY corrupted cache (keeping login & user data intact!), and forces native AOT ('speed') compilation."
+                        ),
                         "action_type": "deep_repair_app",
                         "package": pkg
                     })
@@ -613,41 +693,84 @@ class PhoneDiagnostics:
         io_stall = system_pressure.get("io_stall_percent", 0.0)
         if storage.get("status") == "critical" or io_stall >= 15.0:
             score -= 25
-            issues.append(f"Blocaj pe stocarea internă ({storage.get('percent_used')}% ocupat, I/O stall {io_stall}%)")
+            issues.append(
+                f"Blocaj pe stocarea internă ({storage.get('percent_used')}% ocupat, I/O stall {io_stall}%)"
+                if self.ro else
+                f"Internal storage bottleneck ({storage.get('percent_used')}% used, I/O stall {io_stall}%)"
+            )
             recommendations.append({
                 "severity": "urgent",
-                "title": "Deblocare Viteză Stocare Flash (fstrim + Curățare Cache Sistem)",
-                "description": f"Stocarea este ocupată {storage.get('percent_used')}% ({storage.get('free_gb')} GB liberi). Curăță toate fișierele cache neesențiale ale sistemului și rulează TRIM pe blocurile memoriei flash UFS.",
-                "action_type": "storage_clean"
+                "title": (
+                    "Deblocare Viteză Stocare Flash (fstrim + Curățare Cache Sistem)"
+                    if self.ro else "Restore UFS Flash Storage Speed (fstrim + System Cache Trim)"
+                ),
+                "description": (
+                    f"Stocarea este ocupată {storage.get('percent_used')}% ({storage.get('free_gb')} GB liberi). Curăță toate fișierele cache neesențiale ale sistemului și rulează TRIM pe blocurile memoriei flash UFS."
+                    if self.ro else
+                    f"Storage is {storage.get('percent_used')}% full ({storage.get('free_gb')} GB free). Reclaims non-essential system caches and runs fstrim on UFS flash blocks."
+                ),
+                "action_type": "fstrim"
             })
         elif storage.get("status") == "warning":
             score -= 10
-            issues.append(f"Stocare peste 80% ({storage.get('percent_used')}%)")
+            issues.append(
+                f"Stocare peste 80% ({storage.get('percent_used')}%)"
+                if self.ro else f"Storage usage above 80% ({storage.get('percent_used')}%)"
+            )
             recommendations.append({
                 "severity": "recomandat",
-                "title": "Mentenanță Stocare Flash (fstrim & Cache Trim)",
-                "description": "Eliberează cache-ul global de sistem și optimizează blocurile flash.",
-                "action_type": "storage_clean"
+                "title": (
+                    "Mentenanță Stocare Flash (fstrim & Cache Trim)"
+                    if self.ro else "Flash Storage Maintenance (fstrim & Cache Trim)"
+                ),
+                "description": (
+                    "Eliberează cache-ul global de sistem și optimizează blocurile flash."
+                    if self.ro else "Reclaims global system cache and optimizes UFS flash blocks."
+                ),
+                "action_type": "fstrim"
             })
 
         # 5. Memory & ZRAM Pressure
         mem_stall = system_pressure.get("mem_stall_percent", 0.0)
         if memory.get("swap_percent_used", 0) >= 85:
             score -= 20
-            issues.append(f"ZRAM Swap saturat la {memory.get('swap_percent_used')}% ({memory.get('swap_used_mb')} MB) — procesele persistente din fundal sufocă memoria RAM")
+            issues.append(
+                f"ZRAM Swap saturat la {memory.get('swap_percent_used')}% ({memory.get('swap_used_mb')} MB) — procesele persistente din fundal sufocă memoria RAM"
+                if self.ro else
+                f"ZRAM Swap saturated at {memory.get('swap_percent_used')}% ({memory.get('swap_used_mb')} MB) — persistent background daemons are exhausting RAM"
+            )
             recommendations.append({
                 "severity": "urgent",
-                "title": "🧠 Deblocare ZRAM & Temperare Servicii Grele de Fundal (AI / Telemetrie / Sync)",
-                "description": f"Memoria ZRAM este aproape plină ({memory.get('swap_percent_used')}%), forțând procesorul să comprime memorie continuu. Această acțiune restricționează serviciile parazite din fundal (servicii AI locale, telemetrie, debugging, aplicații companion), activează Cached App Freezer și eliberează RAM.",
+                "title": (
+                    "🧠 Deblocare ZRAM & Temperare Servicii Grele de Fundal (AI / Telemetrie / Sync)"
+                    if self.ro else
+                    "🧠 Relieve ZRAM & Restrict Parasitic Background Services (AI / Telemetry / Sync)"
+                ),
+                "description": (
+                    f"Memoria ZRAM este aproape plină ({memory.get('swap_percent_used')}%), forțând procesorul să comprime memorie continuu. Această acțiune restricționează serviciile parazite din fundal (servicii AI locale, telemetrie, debugging, aplicații companion), activează Cached App Freezer și eliberează RAM."
+                    if self.ro else
+                    f"ZRAM is nearly full ({memory.get('swap_percent_used')}%), forcing the CPU to constantly swap memory pages. This action restricts parasitic background daemons (local AI services, telemetry, debug tracing, companion apps), enables the Cached App Freezer, and frees RAM."
+                ),
                 "action_type": "debloat_pixel8"
             })
         elif memory.get("status") in ("critical", "warning") or mem_stall >= 10.0:
             score -= 15 if memory.get("status") == "critical" else 8
-            issues.append(f"Presiune ridicată pe RAM ({memory.get('ram_percent_used')}%) și ZRAM Swap ({memory.get('swap_percent_used')}%)")
+            issues.append(
+                f"Presiune ridicată pe RAM ({memory.get('ram_percent_used')}%) și ZRAM Swap ({memory.get('swap_percent_used')}%)"
+                if self.ro else
+                f"High pressure on RAM ({memory.get('ram_percent_used')}%) and ZRAM Swap ({memory.get('swap_percent_used')}%)"
+            )
             recommendations.append({
                 "severity": "urgent" if memory.get("status") == "critical" else "recomandat",
-                "title": "Eliberare RAM & Oprire Procese Parazite din Fundal",
-                "description": f"Doar {memory.get('available_mb')} MB RAM sunt disponibili, iar procesorul comprimă {memory.get('swap_used_mb')} MB în ZRAM. Apasă pentru a închide aplicațiile grele din fundal și a elibera memoria RAM instant.",
+                "title": (
+                    "Eliberare RAM & Oprire Procese Parazite din Fundal"
+                    if self.ro else "Free RAM & Stop Heavy Background Processes"
+                ),
+                "description": (
+                    f"Doar {memory.get('available_mb')} MB RAM sunt disponibili, iar procesorul comprimă {memory.get('swap_used_mb')} MB în ZRAM. Apasă pentru a închide aplicațiile grele din fundal și a elibera memoria RAM instant."
+                    if self.ro else
+                    f"Only {memory.get('available_mb')} MB RAM available while {memory.get('swap_used_mb')} MB is compressed in ZRAM. Click to stop heavy background apps and free RAM immediately."
+                ),
                 "action_type": "optimize_ram"
             })
 
@@ -655,11 +778,22 @@ class PhoneDiagnostics:
         temp = thermals.get("battery_temp_c", 0.0)
         if thermals.get("thermal_severity") in ("critical", "warning"):
             score -= 18 if thermals.get("thermal_severity") == "critical" else 8
-            issues.append(f"Limitare termică procesor ({temp}°C - {thermals.get('thermal_status')})")
+            issues.append(
+                f"Limitare termică procesor ({temp}°C - {thermals.get('thermal_status')})"
+                if self.ro else
+                f"CPU Thermal Throttling ({temp}°C - {thermals.get('thermal_status')})"
+            )
             recommendations.append({
                 "severity": "urgent",
-                "title": "Oprire Consumatori CPU & Răcire Procesor",
-                "description": f"La {temp}°C, procesorul își reduce frecvența pentru protecție termică, ceea ce cauzează sacadare severă. Această acțiune oprește forțat aplicațiile care consumă CPU în fundal.",
+                "title": (
+                    "Oprire Consumatori CPU & Răcire Procesor"
+                    if self.ro else "Stop Background CPU Hogs & Cool Down SoC"
+                ),
+                "description": (
+                    f"La {temp}°C, procesorul își reduce frecvența pentru protecție termică, ceea ce cauzează sacadare severă. Această acțiune oprește forțat aplicațiile care consumă CPU în fundal."
+                    if self.ro else
+                    f"At {temp}°C, the SoC throttles clock speeds for thermal protection, causing severe UI lag. This action force-stops background apps consuming CPU."
+                ),
                 "action_type": "cool_down"
             })
 
@@ -667,35 +801,65 @@ class PhoneDiagnostics:
         uptime_days = device.get("uptime_days", 0)
         if uptime_days >= 5.0:
             score -= 8
-            issues.append(f"Telefonul nu a fost repornit de {uptime_days} zile")
+            issues.append(
+                f"Telefonul nu a fost repornit de {uptime_days} zile"
+                if self.ro else f"Device has not been rebooted for {uptime_days} days"
+            )
             recommendations.append({
                 "severity": "recomandat",
-                "title": "Restart Curat al Sistemului Android",
-                "description": f"După {uptime_days} zile fără restart, sistemul Android acumulează fragmentare în memoria grafică și ZRAM. Un restart curăță complet tabela de procese.",
+                "title": (
+                    "Restart Curat al Sistemului Android"
+                    if self.ro else "Clean Android System Reboot"
+                ),
+                "description": (
+                    f"După {uptime_days} zile fără restart, sistemul Android acumulează fragmentare în memoria grafică și ZRAM. Un restart curăță complet tabela de procese."
+                    if self.ro else
+                    f"After {uptime_days} days of uptime, Android accumulates GPU heap and ZRAM fragmentation. A clean reboot flushes the kernel process table."
+                ),
                 "action_type": "reboot"
             })
 
         # 8. Full AOT Speed Compilation
         recommendations.append({
             "severity": "optimizare",
-            "title": "Compilare Forțată 'Speed' pentru Toate Aplicațiile (ART AOT)",
-            "description": "Forțează compilarea codului aplicațiilor în cod mașină nativ rapid (modul 'speed-profile' + 'speed' pe pachetele critice), eliminând întârzierile de compilare JIT din timpul utilizării.",
+            "title": (
+                "Compilare Forțată 'Speed' pentru Toate Aplicațiile (ART AOT)"
+                if self.ro else "Force 'Speed' ART Compilation for All Apps (AOT)"
+            ),
+            "description": (
+                "Forțează compilarea codului aplicațiilor în cod mașină nativ rapid (modul 'speed-profile' + 'speed' pe pachetele critice), eliminând întârzierile de compilare JIT din timpul utilizării."
+                if self.ro else
+                "Forces Ahead-of-Time native machine code compilation ('speed' for critical UI packages + 'speed-profile' for all apps), eliminating runtime JIT lag."
+            ),
             "action_type": "art_optimize"
         })
 
         score = max(5, min(100, score))
 
-        verdict = "Excelent"
-        badge_class = "success"
-        if score < 50:
-            verdict = "Problematic / Sacadare & Blocaje Active"
-            badge_class = "danger"
-        elif score < 75:
-            verdict = "Performanță Scăzută / Necesită Optimizare"
-            badge_class = "warning"
-        elif score < 90:
-            verdict = "Bună cu Mici Încetiniri"
-            badge_class = "info"
+        if self.ro:
+            verdict = "Excelent"
+            badge_class = "success"
+            if score < 50:
+                verdict = "Problematic / Sacadare & Blocaje Active"
+                badge_class = "danger"
+            elif score < 75:
+                verdict = "Performanță Scăzută / Necesită Optimizare"
+                badge_class = "warning"
+            elif score < 90:
+                verdict = "Bună cu Mici Încetiniri"
+                badge_class = "info"
+        else:
+            verdict = "Excellent"
+            badge_class = "success"
+            if score < 50:
+                verdict = "Critical / Active Stutter & App Freezes"
+                badge_class = "danger"
+            elif score < 75:
+                verdict = "Degraded Performance / Needs Optimization"
+                badge_class = "warning"
+            elif score < 90:
+                verdict = "Good (Minor Bottlenecks)"
+                badge_class = "info"
 
         return {
             "score": score,

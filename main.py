@@ -26,7 +26,7 @@ def find_available_port(start_port: int = 8899) -> int:
 
 def open_browser(url: str):
     time.sleep(1.2)
-    print(f"\n[+] Deschidere interfață în browser: {url}\n")
+    print(f"\n[+] Opening Web Dashboard in browser: {url}\n")
     webbrowser.open(url)
 
 def main():
@@ -34,10 +34,11 @@ def main():
     url = f"http://127.0.0.1:{port}"
 
     print("=" * 68)
-    print("  ANDROID HEALTH DOCTOR - Diagnostic & Optimizare Universală ADB")
+    print("  ANDROID HEALTH DOCTOR - Universal ADB Diagnostic & Repair Suite")
     print("=" * 68)
-    print(f"[*] Serverul pornește la adresa: {url}")
-    print("[*] Conectează orice telefon Android prin cablu USB sau Wireless Wi-Fi.")
+    print(f"[*] Starting Web Dashboard at: {url}")
+    print("[*] Connect any Android phone via USB cable or Wireless Wi-Fi.")
+    print("[*] Language toggle (EN / RO) available in the top-right header.")
     print("=" * 68)
 
     threading.Thread(target=open_browser, args=(url,), daemon=True).start()
