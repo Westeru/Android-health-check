@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Android Health & Performance Doctor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="logo-area">
+        <div class="logo-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="5" y="2" width="14" height="20" rx="3" ry="3"></rect>
+            <path d="M12 18h.01"></path>
+          </svg>
+        </div>
+        <div>
+          <h1>Android Health Doctor <span style="font-size:0.8rem; color:#93c5fd; font-weight:600;">Universal ADB Suite</span></h1>
+          <p class="subtitle">Diagnostic & reparare sacadare (UI Jank), aplicații blocate (ANR), baze de date sistem & compilare ART (USB / Wi-Fi)</p>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <button id="toggleWirelessBtn" class="btn btn-secondary" style="border-color: rgba(66, 133, 244, 0.5); color: #93c5fd;">
+          📶 Conectare Wireless (Fără USB)
+        </button>
+        <button id="guideBtn" class="btn btn-secondary">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+          Ghid Activare ADB (USB / Wi-Fi)
+        </button>
+      </div>
+    </header>
+
+    <!-- Connection Status Banner -->
+    <section id="connectionCard" class="card connection-card state-checking">
+      <div class="connection-status-content">
+        <div class="status-indicator">
+          <div class="ping-circle"></div>
+          <div class="status-dot"></div>
+        </div>
+        <div class="status-text-group">
+          <h3 id="connStatusTitle">Se caută dispozitivul Android...</h3>
+          <p id="connStatusDesc">Conectează telefonul prin cablu USB sau apasă pe „📶 Conectare Wireless (Fără USB)”.</p>
+          <div id="deviceSelectorWrap" class="device-selector-wrap hidden">
+            <label for="deviceSelector">Dispozitiv activ:</label>
+            <select id="deviceSelector" class="device-select"></select>
+          </div>
+          <div id="phoneLiveActivityBadge" class="phone-activity-pill hidden">
+            <span id="phoneLiveActivityDot" class="activity-dot"></span>
+            <span id="phoneLiveActivityText">Verificare activitate telefon...</span>
+          </div>
+        </div>
+      </div>
+      <div class="connection-actions">
+        <button id="wirelessQuickBtn" class="btn btn-secondary" onclick="window.toggleWirelessPanel()">
+          📶 Mod Wireless Wi-Fi
+        </button>
+        <button id="superBoostTopBtn" class="btn btn-accent" disabled onclick="executeOptimization('deep_boost_all')">
+          ⚡ Super-Optimizare 1-Click
+        </button>
+        <button id="scanBtn" class="btn btn-primary" disabled>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          Scanează Telefonul
+        </button>
+      </div>
+    </section>
+
+    <!-- Wireless ADB Connection Panel -->
+    <section id="wirelessCard" class="card wireless-card hidden">
+      <div class="wireless-header">
+        <div>
+          <h3>📶 Conectare Wireless ADB (Pentru telefoane fără cablu sau cu port USB defect)</h3>
+          <p class="subtitle">Conectează orice telefon cu Android 11+ direct prin rețeaua Wi-Fi locală</p>
+        </div>
+        <div class="wireless-header-actions">
+          <button id="discoverMdnsBtn" class="btn btn-action-small" onclick="window.discoverWirelessPhones()">
+            🔍 Caută automat telefonul în Wi-Fi
+          </button>
+          <button class="btn-mini" onclick="window.toggleWirelessPanel()">✕ Ascunde</button>
+        </div>
+      </div>
+
+      <div class="wireless-steps-banner">
+        <strong>Cum activezi pe telefon (fără cablu):</strong>
+        1. Conectează telefonul la același Wi-Fi cu PC-ul. &bull;
+        2. Mergi în <em>Setări &rarr; Opțiuni dezvoltator &rarr; <strong>Depanare wireless (Wireless debugging)</strong></em> și pornește-o. &bull;
+        3. Apasă pe textul <strong>Depanare wireless</strong> pentru a vedea IP-ul și opțiunea de asociere cu cod.
+      </div>
+
+      <div id="mdnsDiscoveryBox" class="mdns-discovery-box hidden"></div>
+
+      <div class="wireless-grid">
+        <!-- Step 1: Pairing -->
+        <div class="wireless-box">
+          <h4>1️⃣ Prima Conectare: Asociere cu Cod (6 cifre)</h4>
+          <p class="wireless-box-desc">
+            Pe telefon, apasă pe <strong>„Asociați dispozitivul cu un cod de asociere”</strong> (Pair device with pairing code) și introdu datele afișate:
+          </p>
+          <div class="form-row">
+            <label>IP și Port de Asociere (din fereastra pop-up):</label>
+            <input type="text" id="pairAddrInput" class="text-input" placeholder="ex: 192.168.1.105:39123">
+          </div>
+          <div class="form-row-split">
+            <div class="form-row">
+              <label>Cod Asociere (6 cifre):</label>
+              <input type="text" id="pairCodeInput" class="text-input" placeholder="ex: 482910" maxlength="6">
+            </div>
+            <div class="form-row">
+              <label>Port Conectare (opțional):</label>
+              <input type="text" id="pairConnectPortInput" class="text-input" placeholder="ex: 41555">
+            </div>
+          </div>
+          <button id="pairSubmitBtn" class="btn btn-primary" style="width:100%; margin-top:8px;" onclick="window.submitWirelessPair()">
+            🔗 Asociază și Conectează Telefonul
+          </button>
+        </div>
+
+        <!-- Step 2: Direct Connect -->
+        <div class="wireless-box">
+          <h4>2️⃣ Conectare Directă (Dacă a fost deja asociat)</h4>
+          <p class="wireless-box-desc">
+            Dacă ai făcut deja Pasul 1 (sau telefonul a mai fost asociat cu acest PC), introdu <strong>Adresa IP și Portul</strong> afișate pe pagina principală <em>Depanare wireless</em>:
+          </p>
+          <div class="form-row">
+            <label>IP și Port Conectare (de pe ecranul Depanare wireless):</label>
+            <input type="text" id="connectAddrInput" class="text-input" placeholder="ex: 192.168.1.105:41555">
+          </div>
+          <div class="wireless-btn-row" style="margin-top:16px;">
+            <button id="connectSubmitBtn" class="btn btn-accent" style="flex:1;" onclick="window.submitWirelessConnect()">
+              📶 Conectează prin Wi-Fi
+            </button>
+            <button class="btn btn-secondary" onclick="window.disconnectWirelessAll()">
+              🔌 Deconectează Wi-Fi
+            </button>
+          </div>
+          <div id="wirelessStatusMsg" class="wireless-status-msg hidden"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Live Optimization Progress & Execution Console -->
+    <section id="liveConsoleCard" class="card live-console-card hidden">
+      <div class="live-console-header">
+        <div class="live-console-title-group">
+          <span id="liveStatusBadge" class="badge info">ÎN EXECUȚIE</span>
+          <h3 id="liveConsoleTitle">Consolă Execuție Reparații Live</h3>
+        </div>
+        <div class="live-console-meta">
+          <span id="liveStepCounter" class="live-step-pill">Pasul 0 / 0 (0%)</span>
+          <span id="liveElapsedTimer" class="live-timer-pill">⏱️ 0.0s</span>
+          <button id="closeLiveConsoleBtn" class="btn-mini" title="Ascunde consola">✕ Închide</button>
+        </div>
+      </div>
+
+      <div class="live-progress-track">
+        <div id="liveProgressBarFill" class="live-progress-fill" style="width: 0%"></div>
+      </div>
+
+      <div id="liveCurrentTaskBox" class="live-current-task">
+        Se pregătește execuția comenzilor ADB...
+      </div>
+
+      <div id="liveLogContainer" class="live-log-terminal"></div>
+
+      <div id="liveFinishBanner" class="live-finish-banner hidden">
+        <div id="liveFinishText" class="live-finish-text"></div>
+        <div class="live-finish-actions">
+          <button class="btn btn-primary" onclick="window.triggerRescanFromConsole()">🔍 Re-scanează Telefonul Acum</button>
+          <button class="btn btn-secondary" onclick="executeOptimization('reboot')">🔄 Restart Telefon (Recomandat pt. golirea ZRAM)</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Scan Progress Bar (Hidden by default) -->
+    <div id="scanProgressBar" class="progress-container hidden">
+      <div class="progress-bar-animated"></div>
+      <span class="progress-label">Se analizează cadrele pierdute (UI Jank), jurnalele ANR, bazele de date de sistem, memoria ZRAM și stocarea...</span>
+    </div>
+
+    <!-- Main Results (Hidden initially until scanned) -->
+    <main id="resultsArea" class="results-area hidden">
+      <!-- Quick Fix Toolbar -->
+      <section class="card quick-toolbar-card">
+        <div class="toolbar-header">
+          <h4>🛠️ Panou de Intervenție Rapidă (Universal Android)</h4>
+          <span class="toolbar-hint">Acțiuni directe prin ADB pentru eliminarea sacadării, deblocarea bazelor de date și optimizarea memoriei</span>
+        </div>
+        <div class="toolbar-buttons">
+          <button class="btn btn-accent" onclick="executeOptimization('deep_boost_all')">
+            ⚡ Repară Tot (Anti-Lag & Anti-Freeze)
+          </button>
+          <button class="btn btn-secondary" style="border-color: rgba(234, 67, 53, 0.5); color: #fca5a5;" onclick="executeOptimization('fix_contacts_acore')">
+            📇 Repară Baze de Date Sistem (Contacte / MediaStore / Sync)
+          </button>
+          <button class="btn btn-secondary" style="border-color: rgba(251, 188, 5, 0.5); color: #fde047;" onclick="executeOptimization('debloat_pixel8')">
+            🧠 Deblocare ZRAM & Stop Servicii Parazite (AI / Telemetrie)
+          </button>
+          <button class="btn btn-secondary" onclick="executeOptimization('fix_ui_stutter')">
+            🚀 Elimină Sacadarea (120Hz + Animații 0.5x + Launcher/WebView)
+          </button>
+          <button class="btn btn-secondary" onclick="executeOptimization('optimize_ram')">
+            🧹 Eliberează RAM & Oprește Fundalul
+          </button>
+          <button class="btn btn-secondary" onclick="executeOptimization('fstrim')">
+            💾 Trim Stocare Flash & Cache
+          </button>
+          <button class="btn btn-secondary" onclick="executeOptimization('restore_animations')">
+            🔄 Animații 1.0x (Standard)
+          </button>
+        </div>
+      </section>
+
+      <!-- Health Score Hero -->
+      <section class="card hero-score-card">
+        <div class="score-display">
+          <div class="score-dial">
+            <span id="scoreValue" class="score-number">--</span>
+            <span class="score-sub">/ 100</span>
+          </div>
+          <div class="score-info">
+            <div class="badge-wrapper">
+              <span id="scoreBadge" class="badge">Analiză</span>
+            </div>
+            <h2 id="scoreTitle">Stare Generală</h2>
+            <p id="scoreSummary">Rezumatul evaluării dispozitivului</p>
+          </div>
+        </div>
+
+        <div id="quickIssuesBox" class="quick-issues-box">
+          <h4>Cauzele identificate pentru sacadare și blocaje:</h4>
+          <ul id="issuesList"></ul>
+        </div>
+      </section>
+
+      <!-- Actionable Fixes & Optimizations -->
+      <section class="card recommendations-card">
+        <div class="card-title-row">
+          <div class="title-with-icon">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
+            </svg>
+            <h3>Plan de Reparare Personalizat</h3>
+          </div>
+        </div>
+        <div id="recommendationsList" class="recommendations-grid"></div>
+      </section>
+
+      <!-- Universal Per-App Repair Tool (NEW) -->
+      <section class="card anr-card">
+        <div class="card-title-row">
+          <div class="title-with-icon">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="7"></rect>
+              <rect x="14" y="3" width="7" height="7"></rect>
+              <rect x="14" y="14" width="7" height="7"></rect>
+              <rect x="3" y="14" width="7" height="7"></rect>
+            </svg>
+            <h3>Reparare & Optimizare pentru Orice Aplicație Instalată</h3>
+          </div>
+          <button class="btn btn-action-small" onclick="window.loadInstalledPackages()">🔄 Încarcă Lista Aplicațiilor</button>
+        </div>
+        <p class="section-desc">
+          Ai o aplicație care se deschide greu, îngheață sau consumă bateria în fundal? Selecteaz-o sau scrie numele pachetului mai jos pentru a o repara:
+        </p>
+        <div class="custom-app-repair-bar">
+          <input type="text" id="customPkgInput" list="installedPackagesList" class="text-input" style="flex:1; min-width:240px;" placeholder="Caută sau scrie un pachet (ex: com.whatsapp, com.instagram.android)...">
+          <datalist id="installedPackagesList"></datalist>
+          <button class="btn btn-primary" onclick="window.runCustomAppAction('deep_repair_app')">🔧 Repară & Compilează Speed (Fără pierdere date)</button>
+          <button class="btn btn-action-small btn-warn-small" onclick="window.runCustomAppAction('restrict_app_background')">🛑 Restricționează Fundal</button>
+          <button class="btn btn-action-small btn-danger-small" onclick="window.runCustomAppAction('clear_package_cache')">🗑️ Reset Bază Date (Complet)</button>
+        </div>
+      </section>
+
+      <!-- Diagnostic Grid -->
+      <div class="diagnostic-grid">
+        <!-- 1. Fluență UI & Sacadare -->
+        <div class="card stat-card">
+          <div class="card-header-clean">
+            <span class="card-icon">🎯</span>
+            <h4>Fluență UI & Ecran</h4>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Cadre Pierdute (Jank):</span>
+            <span id="uiJankVal" class="metric-val">--</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Rată Refresh / Animații:</span>
+            <span id="uiRefreshVal" class="metric-val">--</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Hook-uri Accesibilitate:</span>
+            <span id="uiAccessVal" class="metric-val">--</span>
+          </div>
+          <p id="uiStatusNote" class="stat-status-note"></p>
+        </div>
+
+        <!-- 2. Stocare -->
+        <div class="card stat-card">
+          <div class="card-header-clean">
+            <span class="card-icon storage-icon">💾</span>
+            <h4>Stocare Internă UFS</h4>
+          </div>
+          <div class="storage-meter-wrapper">
+            <div class="meter-bar">
+              <div id="storageFill" class="meter-fill" style="width: 0%"></div>
+            </div>
+            <div class="meter-labels">
+              <span id="storageUsedText">0 GB</span>
+              <span id="storageTotalText">0 GB</span>
+            </div>
+          </div>
+          <p id="storageStatusText" class="stat-status-note"></p>
+        </div>
+
+        <!-- 3. RAM & Memorie -->
+        <div class="card stat-card">
+          <div class="card-header-clean">
+            <span class="card-icon ram-icon">⚡</span>
+            <h4>Memorie RAM & ZRAM</h4>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">RAM Utilizat:</span>
+            <span id="ramUsageVal" class="metric-val">--</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Swap / ZRAM:</span>
+            <span id="zramUsageVal" class="metric-val">--</span>
+          </div>
+          <p id="ramStatusText" class="stat-status-note"></p>
+        </div>
+
+        <!-- 4. Temperatură & Procesor -->
+        <div class="card stat-card">
+          <div class="card-header-clean">
+            <span class="card-icon temp-icon">🔥</span>
+            <h4 id="socCardTitle">Termice & Procesor</h4>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Temperatură Baterie:</span>
+            <span id="tempVal" class="metric-val">-- °C</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Stare Throttling:</span>
+            <span id="throttleVal" class="metric-val">--</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Timp fără Restart:</span>
+            <span id="uptimeVal" class="metric-val">--</span>
+          </div>
+          <p id="thermalStatusNote" class="stat-status-note"></p>
+        </div>
+      </div>
+
+      <!-- ANR & Crashes Deep-Dive -->
+      <section class="card anr-card">
+        <div class="card-title-row">
+          <div class="title-with-icon">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+              <line x1="12" y1="9" x2="12" y2="13"></line>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+            <h3>Aplicații care se Blochează (ANR / Crash / Înghețare în ultimele 24h)</h3>
+          </div>
+          <span id="anrCountBadge" class="badge">0 Detectate</span>
+        </div>
+        <p class="section-desc">
+          Folosește butonul <strong>🔧 Repară (Păstrează Date)</strong> pentru a curăța doar cache-ul corupt și a recompila nativ aplicația în mod <code>speed</code> (fără să îți șteargă contul!).
+        </p>
+
+        <div id="anrList" class="anr-list"></div>
+      </section>
+
+      <!-- UI Jank / Frame Drop Culprits -->
+      <section class="card anr-card">
+        <div class="card-title-row">
+          <div class="title-with-icon">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+            </svg>
+            <h3>Aplicații cu Mișcare Sacadată (Frame Drops / Lag Grafic)</h3>
+          </div>
+          <span id="jankCountBadge" class="badge info">Analiză GPU</span>
+        </div>
+        <p class="section-desc">
+          Aceste aplicații au întârziat randarea cadrelor pe ecran (peste 8.3ms / 16.6ms), provocând senzația de agățare sau scroll sacadat:
+        </p>
+        <div id="jankAppsList" class="anr-list"></div>
+      </section>
+
+      <!-- Top Consumers Table (RAM & CPU) -->
+      <div class="dual-columns">
+        <div class="card list-card">
+          <h4>Top Consumatori Memorie RAM (Cu oprire rapidă)</h4>
+          <ul id="topRamList" class="item-list"></ul>
+        </div>
+        <div class="card list-card">
+          <h4>Top Consumatori CPU Recenți (Procese active)</h4>
+          <ul id="topCpuList" class="item-list"></ul>
+        </div>
+      </div>
+    </main>
+
+    <!-- Modal: USB & Wireless Debugging Instructions -->
+    <div id="guideModal" class="modal-overlay hidden">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3>Cum activezi Depanarea USB sau Wireless pe Android</h3>
+          <button id="closeGuideBtn" class="close-btn">&times;</button>
+        </div>
+        <div class="modal-content">
+          <ol class="steps-list">
+            <li>
+              <strong>Deschide Setările</strong> pe telefonul Android (Samsung, Pixel, Xiaomi, OnePlus, Motorola etc.).
+            </li>
+            <li>
+              Mergi la <strong>Despre telefon</strong> (About phone) &rarr; găsește <strong>Număr versiune</strong> (Build number / MIUI / OS Version) și atinge-l rapid de <strong>7 ori</strong> până apare mesajul <em>„Acum ești un dezvoltator!”</em>.
+            </li>
+            <li>
+              Intră în <strong>Setări &rarr; Sistem / Setări suplimentare &rarr; Opțiuni pentru dezvoltatori</strong> (Developer options).
+            </li>
+            <li>
+              <strong>Pentru Cablu USB:</strong> Activează <strong>Depanare USB</strong> (USB debugging), conectează cablul și apasă pe <strong>Permiteți</strong> (Allow) pe ecranul telefonului.
+            </li>
+            <li>
+              <strong>Pentru Wi-Fi (Fără Cablu):</strong> Activează <strong>Depanare wireless</strong> (Wireless debugging), apasă pe textul ei și folosește panoul <em>📶 Conectare Wireless</em> din aplicație.
+            </li>
+          </ol>
+        </div>
+        <div class="modal-footer">
+          <button id="guideGotItBtn" class="btn btn-primary">Am înțeles</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast hidden"></div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
