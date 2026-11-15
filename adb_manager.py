@@ -1,24 +1,47 @@
 import os
+import sys
 import subprocess
 import shutil
 import re
+import urllib.request
+import zipfile
 from typing import Optional, Dict, List, Tuple, Any
 
 class AdbManager:
-    """Manages ADB discovery, USB & Wireless (Wi-Fi) connections, and device interactions."""
+    """Manages ADB discovery (including bundled EXE & auto-download), USB & Wireless (Wi-Fi) connections, and device interactions."""
+
+    PLATFORM_TOOLS_URL = "https://dl.google.com/android/repository/platform-tools-latest-windows.zip"
 
     def __init__(self, adb_path: Optional[str] = None):
-        self.adb_path = adb_path or self._find_adb()
+        self.adb_path = adb_path or self._find_or_provision_adb()
 
-    def _find_adb(self) -> str:
-        """Locates adb executable across common paths or PATH."""
+    def _find_or_provision_adb(self) -> str:
+        """Locates adb executable in PyInstaller bundle, local folder, PATH, SDK, or auto-downloads official Google Platform Tools."""
+        base_dirs = []
+        # 1. PyInstaller bundle temp directory (_MEIPASS)
+        if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+            base_dirs.append(getattr(sys, "_MEIPASS"))
+            base_dirs.append(os.path.dirname(sys.executable))
+        base_dirs.append(os.path.dirname(os.path.abspath(__file__)))
+
+        for bdir in base_dirs:
+            bundled = os.path.join(bdir, "platform-tools", "adb.exe")
+            if os.path.isfile(bundled):
+                return bundled
+            bundled_root = os.path.join(bdir, "adb.exe")
+            if os.path.isfile(bundled_root):
+                return bundled_root
+
+        # 2. System PATH
         which_adb = shutil.which("adb")
         if which_adb and os.path.exists(which_adb):
             return which_adb
 
+        # 3. Common Windows SDK & AppData paths
         user_profile = os.environ.get("USERPROFILE", "")
         local_app_data = os.environ.get("LOCALAPPDATA", "")
         candidates = [
+            os.path.join(local_app_data, "AndroidHealthDoctor", "platform-tools", "adb.exe"),
             os.path.join(local_app_data, "Android", "Sdk", "platform-tools", "adb.exe"),
             os.path.join(user_profile, "AppData", "Local", "Android", "Sdk", "platform-tools", "adb.exe"),
             os.path.join(user_profile, "platform-tools", "adb.exe"),
@@ -28,15 +51,61 @@ class AdbManager:
         ]
 
         for cand in candidates:
-            if os.path.isfile(cand):
+            if cand and os.path.isfile(cand):
                 return cand
 
+        # 4. Auto-download official Google Platform Tools for non-technical users
+        auto_path = self.auto_download_adb()
+        if auto_path and os.path.isfile(auto_path):
+            return auto_path
+
         return "adb"
+
+    def auto_download_adb(self) -> Optional[str]:
+        """Automatically downloads and extracts official Google Android Platform Tools if ADB is missing on the PC."""
+        try:
+            local_app_data = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+            target_dir = os.path.join(local_app_data, "AndroidHealthDoctor")
+            os.makedirs(target_dir, exist_ok=True)
+            adb_exe = os.path.join(target_dir, "platform-tools", "adb.exe")
+            if os.path.isfile(adb_exe):
+                return adb_exe
+
+            zip_path = os.path.join(target_dir, "platform-tools.zip")
+            print("[*] ADB not found on system. Downloading official Google Android Platform Tools (~6 MB)...")
+            urllib.request.urlretrieve(self.PLATFORM_TOOLS_URL, zip_path)
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                zf.extractall(target_dir)
+            try:
+                os.remove(zip_path)
+            except Exception:
+                pass
+
+            if os.path.isfile(adb_exe):
+                print(f"[+] Official Android Platform Tools installed at: {adb_exe}")
+                self.adb_path = adb_exe
+                return adb_exe
+        except Exception as e:
+            print(f"[!] Auto-download of ADB failed: {e}")
+        return None
+
+    def _creation_flags(self) -> int:
+        """Prevents flashing console windows on Windows when spawning adb subprocesses."""
+        if sys.platform == "win32":
+            return getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+        return 0
 
     def is_available(self) -> bool:
         """Checks if ADB binary is reachable and working."""
         try:
-            res = subprocess.run([self.adb_path, "version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=5)
+            res = subprocess.run(
+                [self.adb_path, "version"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=5,
+                creationflags=self._creation_flags()
+            )
             return res.returncode == 0
         except Exception:
             return False
@@ -47,7 +116,14 @@ class AdbManager:
             return []
         ro = (lang == "ro")
         try:
-            res = subprocess.run([self.adb_path, "devices", "-l"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=8)
+            res = subprocess.run(
+                [self.adb_path, "devices", "-l"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=8,
+                creationflags=self._creation_flags()
+            )
             lines = res.stdout.strip().splitlines()
             devices = []
             for line in lines[1:]:
@@ -242,7 +318,16 @@ class AdbManager:
         adb_cmd.extend(["shell", cmd])
 
         try:
-            res = subprocess.run(adb_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout, encoding="utf-8", errors="replace")
+            res = subprocess.run(
+                adb_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=timeout,
+                encoding="utf-8",
+                errors="replace",
+                creationflags=self._creation_flags()
+            )
             if res.returncode == 0:
                 return True, res.stdout
             else:
@@ -263,7 +348,16 @@ class AdbManager:
         adb_cmd.extend(args)
 
         try:
-            res = subprocess.run(adb_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout, encoding="utf-8", errors="replace")
+            res = subprocess.run(
+                adb_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=timeout,
+                encoding="utf-8",
+                errors="replace",
+                creationflags=self._creation_flags()
+            )
             return res.returncode == 0, res.stdout if res.returncode == 0 else (res.stderr or res.stdout)
         except Exception as e:
             return False, str(e)

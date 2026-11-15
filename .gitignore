@@ -8,3 +8,6 @@ env/
 *.log
 .DS_Store
 Thumbs.db
+build/
+build_platform_tools/
+*.spec

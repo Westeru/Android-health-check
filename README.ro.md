@@ -8,6 +8,17 @@
 
 ---
 
+## 🟢 Varianta Simplă (Fără Python și fără instalare ADB!)
+
+Pentru utilizatorii care **nu au Python sau Android Platform Tools instalate pe PC**:
+1. **[📥 Apasă aici pentru a descărca `AndroidHealthDoctor.exe` (Aplicație Portabilă într-un singur fișier)](dist/AndroidHealthDoctor.exe)** (sau din secțiunea **[Releases](../../releases)**).
+2. Dă dublu-clic pe **`AndroidHealthDoctor.exe`**.
+   - Totul este deja inclus într-un singur fișier `.exe`: motorul Python, interfața grafică Web și utilitarul oficial Google `adb.exe`!
+   - Chiar dacă `adb.exe` ar lipsi vreodată, aplicația îl descarcă automat de la Google (~6 MB) la prima pornire.
+3. Interfața se va deschide singură în browser la `http://127.0.0.1:8899` (poți comuta limba pe **🇷🇴 RO** din butonul din dreapta-sus).
+
+---
+
 ## 🔍 Ce investighează și repară aplicația?
 
 1. **Bazele de Date de Sistem Blocate (`android.process.acore`, `MediaStore`, `Downloads`, `GSF`)**:
@@ -34,34 +45,18 @@
 
 ---
 
-## 🚀 Instalare și Utilizare
+## 🛠️ Rularea din Codul Sursă Python (Opțional, pentru Dezvoltatori)
 
-### 1. Cerințe
-- **Python 3.9+**
-- **Android Platform Tools (`adb`)** instalat în `PATH` sau în `%LOCALAPPDATA%\Android\Sdk\platform-tools`
-- Instalare dependențe Python:
-  ```bash
-  pip install -r requirements.txt
-  ```
-
-### 2. Pornire Interfață Web (Recomandat)
-Rulează `run.bat` (pe Windows) sau din terminal:
-```bash
-python main.py
-```
-Se va deschide automat în browser la `http://127.0.0.1:8899` (poți comuta între Engleză și Română din butonul `🇬🇧 EN | 🇷🇴 RO` din dreapta-sus).
-
-### 3. Pornire în mod Terminal (CLI)
-```bash
-# Scanare completă (implicit în Engleză, adaugă --ro pentru Română)
-python cli.py --ro
-
-# Scanare + aplicare automată a reparațiilor
-python cli.py --fix --ro
-
-# Conectare Wireless din CLI (fără cablu USB)
-python cli.py --pair 192.168.1.105:39123 482910 --connect 192.168.1.105:41555
-```
+1. Instalare dependențe:
+   ```bash
+   pip install -r requirements.txt
+   ```
+2. Pornire Interfață Web:
+   ```bash
+   python main.py
+   ```
+3. Generare fișier `.exe` portabil:
+   Rulează `build_exe.bat` sau `python build_exe.py` pentru a genera `dist/AndroidHealthDoctor.exe`.
 
 ---
 

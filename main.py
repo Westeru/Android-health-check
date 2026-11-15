@@ -3,8 +3,10 @@ import os
 
 if sys.platform == "win32":
     try:
-        sys.stdout.reconfigure(encoding="utf-8")
-        sys.stderr.reconfigure(encoding="utf-8")
+        if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8")
+        if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8")
     except Exception:
         pass
 
@@ -13,6 +15,7 @@ import webbrowser
 import threading
 import time
 import uvicorn
+from server import app
 
 def is_port_in_use(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -39,11 +42,12 @@ def main():
     print(f"[*] Starting Web Dashboard at: {url}")
     print("[*] Connect any Android phone via USB cable or Wireless Wi-Fi.")
     print("[*] Language toggle (EN / RO) available in the top-right header.")
+    print("[*] Keep this window open while using the application.")
     print("=" * 68)
 
     threading.Thread(target=open_browser, args=(url,), daemon=True).start()
 
-    uvicorn.run("server:app", host="127.0.0.1", port=port, log_level="warning")
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
 
 if __name__ == "__main__":
     main()

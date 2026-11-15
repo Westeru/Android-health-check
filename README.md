@@ -8,6 +8,17 @@
 
 ---
 
+## 🟢 Option 1: Standalone Windows Application (No Python or ADB Required!)
+
+For users who **do not have Python or Android Platform Tools installed**:
+1. **[📥 Click here to download `AndroidHealthDoctor.exe` (Portable 1-File App)](dist/AndroidHealthDoctor.exe)** (or download from the **[Releases](../../releases)** page).
+2. Double-click **`AndroidHealthDoctor.exe`**.
+   - Everything is pre-packaged inside the executable: Python runtime, Web UI, and official Google `adb.exe` drivers!
+   - Even if `adb.exe` is ever missing on a system, the app automatically downloads the official Google Android Platform Tools (~6 MB) in the background.
+3. Your browser will open automatically at `http://127.0.0.1:8899`.
+
+---
+
 ## ✨ Key Features & Deep Diagnostics
 
 1. **System Content Providers & SQLite Database Repair (`android.process.acore`, `MediaStore`, `Downloads`, `GSF`)**:
@@ -35,33 +46,35 @@
 
 ---
 
-## 🚀 Quick Start
+## 🛠️ Option 2: Run from Python Source (For Developers)
 
 ### 1. Prerequisites
-- **Python 3.9+**
-- **Android Platform Tools (`adb`)** installed in your system `PATH` or in `%LOCALAPPDATA%\Android\Sdk\platform-tools`
+- **Python 3.9+** (ADB is automatically downloaded if not already installed!)
 - Install Python dependencies:
   ```bash
   pip install -r requirements.txt
   ```
 
-### 2. Launch Web UI (Recommended)
+### 2. Launch Web UI
 Double-click `run.bat` (on Windows) or run:
 ```bash
 python main.py
 ```
-The dashboard will automatically open at `http://127.0.0.1:8899`.
 
-### 3. Launch CLI Mode
+### 3. Build Standalone `.exe` Yourself
+Double-click `build_exe.bat` or run:
+```bash
+python build_exe.py
+```
+This produces `dist/AndroidHealthDoctor.exe` with Python + Web UI + `adb.exe` bundled inside a single portable file.
+
+### 4. Launch CLI Mode
 ```bash
 # Run full diagnostic scan (English default, add --ro for Romanian)
 python cli.py
 
 # Run scan + automatically apply all deep repairs
 python cli.py --fix
-
-# Pair and connect over Wireless ADB from CLI
-python cli.py --pair 192.168.1.105:39123 482910 --connect 192.168.1.105:41555
 ```
 
 ---
