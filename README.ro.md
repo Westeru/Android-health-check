@@ -2,9 +2,9 @@
 
 🌐 **Language / Limba:** **[🇬🇧 English](README.md)** | **[🇷🇴 Română](README.ro.md)**
 
-### Suită universală de diagnosticare și optimizare prin ADB (USB & Wireless Wi-Fi) pentru orice telefon Android
+### Suită universală de diagnosticare și optimizare prin ADB (USB & Wireless Wi-Fi) pentru orice Telefon Android, Tabletă și Android TV / Google TV
 
-**Android Health Doctor** este o aplicație Web + CLI (fără necesitate de Root) concepută pentru a depista și repara cauzele reale pentru care un telefon Android (Samsung Galaxy, Google Pixel, Xiaomi, OnePlus, Motorola, Asus, Nothing etc.) începe să meargă sacadat (*UI Jank / Frame Drops*), să rămână fără memorie RAM/ZRAM sau să afișeze erori **„Application Not Responding” (ANR)**.
+**Android Health Doctor** este o aplicație Web + CLI (fără necesitate de Root) concepută pentru a depista și repara cauzele reale pentru care un telefon Android (**Samsung Galaxy, Google Pixel, Xiaomi, OnePlus, Motorola, Asus, Nothing** etc.) sau un televizor / media box cu **Android TV / Google TV** (**Google TV Streamer, Chromecast cu Google TV, Philips Android TV, Sony Bravia, TCL, Xiaomi TV**) începe să meargă sacadat (*UI Jank / Frame Drops*), să rămână fără memorie RAM/ZRAM sau să afișeze erori **„Application Not Responding” (ANR)**.
 
 ---
 

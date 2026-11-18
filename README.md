@@ -2,9 +2,9 @@
 
 🌐 **Language / Limba:** **[🇬🇧 English](README.md)** | **[🇷🇴 Română](README.ro.md)**
 
-### Universal ADB Diagnostic & Optimization Suite (USB & Wireless Wi-Fi) for Any Android Device
+### Universal ADB Diagnostic & Optimization Suite (USB & Wireless Wi-Fi) for Any Android Phone, Tablet & Android TV / Google TV
 
-**Android Health Doctor** is a rootless Web + CLI diagnostic and repair suite designed to identify and fix the real root causes behind Android UI stutter (*jank / frame drops*), RAM/ZRAM exhaustion, corrupted system databases, and **"Application Not Responding" (ANR)** freezes across all Android brands (**Samsung Galaxy, Google Pixel, Xiaomi, OnePlus, Motorola, Asus, Nothing, Sony**, etc.).
+**Android Health Doctor** is a rootless Web + CLI diagnostic and repair suite designed to identify and fix the real root causes behind Android UI stutter (*jank / frame drops*), RAM/ZRAM exhaustion, corrupted system databases, and **"Application Not Responding" (ANR)** freezes across all Android phones (**Samsung Galaxy, Google Pixel, Xiaomi, OnePlus, Motorola, Asus, Nothing, Sony**) and **Android TV / Google TV devices** (**Google TV Streamer, Chromecast with Google TV, Philips Ambilight Android TV, Sony Bravia, TCL, Xiaomi TV**, etc.).
 
 ---
 
