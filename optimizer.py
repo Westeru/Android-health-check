@@ -14,6 +14,7 @@ class PhoneOptimizer:
         "com.android.systemui",
         "com.google.android.apps.nexuslauncher",
         "com.google.android.tvlauncher",
+        "com.google.android.apps.tv.launcherx",
         "com.google.android.leanbacklauncher",
         "org.droidtv.ui",
         "org.droidtv.playtv",
@@ -43,6 +44,8 @@ class PhoneOptimizer:
     ]
 
     TV_UI_PACKAGES = [
+        "com.google.android.apps.tv.launcherx",
+        "com.google.android.apps.tv.dreamx",
         "com.google.android.tvlauncher",
         "com.google.android.tvrecommendations",
         "com.google.android.leanbacklauncher",
@@ -112,8 +115,14 @@ class PhoneOptimizer:
         pkgs = list(self.BASE_UI_PACKAGES)
         is_tv = self._is_android_tv()
         if is_tv:
+            ok_all, all_out = self.adb.run_shell("pm list packages", self.serial, timeout=6)
+            installed_set = set()
+            if ok_all and all_out:
+                for line in all_out.splitlines():
+                    if line.startswith("package:"):
+                        installed_set.add(line.replace("package:", "").strip())
             for tv_pkg in self.TV_UI_PACKAGES:
-                if tv_pkg not in pkgs:
+                if (not installed_set or tv_pkg in installed_set) and tv_pkg not in pkgs:
                     pkgs.append(tv_pkg)
 
         detected_launcher = None
@@ -887,6 +896,8 @@ class PhoneOptimizer:
         )
         self.adb.run_shell("sm fstrim", self.serial, timeout=45)
         self.adb.run_shell("dumpsys gfxinfo --reset", self.serial, timeout=8)
+        for pkg in ui_pkgs:
+            self.adb.run_shell(f"dumpsys gfxinfo {pkg} reset", self.serial, timeout=4)
         self.adb.run_shell("cmd activity clear-exit-info", self.serial, timeout=8)
 
         ram_after = self.get_available_ram_mb()
