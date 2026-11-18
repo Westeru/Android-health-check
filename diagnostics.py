@@ -45,7 +45,7 @@ class PhoneDiagnostics:
         storage = self.get_storage_info()
         memory = self.get_memory_info()
         anrs_crashes = self.get_anr_and_crash_logs()
-        thermals_cpu = self.get_thermal_and_cpu_info(device_info.get("soc", "SoC"))
+        thermals_cpu = self.get_thermal_and_cpu_info(device_info.get("soc", "SoC"), is_tv=device_info.get("is_tv", False))
         battery = self.get_battery_info()
         ui_fluency = self.get_ui_fluency_and_jank()
         system_pressure = self.get_psi_and_accessibility()
@@ -83,6 +83,8 @@ class PhoneDiagnostics:
         security_patch = get_prop("ro.build.version.security_patch", "N/A")
         build_id = get_prop("ro.build.id", "N/A")
         soc_model = get_prop("ro.soc.model") or get_prop("ro.board.platform") or get_prop("ro.hardware") or "ARM64 SoC"
+        characteristics = get_prop("ro.build.characteristics", "")
+        is_tv = "tv" in characteristics.lower()
 
         uptime_str = "Necunoscut" if self.ro else "Unknown"
         uptime_days = 0.0
@@ -103,6 +105,7 @@ class PhoneDiagnostics:
             "brand": brand,
             "codename": device_codename,
             "soc": soc_model,
+            "is_tv": is_tv,
             "android_version": android_ver,
             "sdk_version": sdk_ver,
             "security_patch": security_patch,
@@ -139,10 +142,17 @@ class PhoneDiagnostics:
                         pass
 
         status = "normal"
-        if percent_used >= 90 or (free_gb > 0 and free_gb < 8.0):
-            status = "critical"
-        elif percent_used >= 80 or (free_gb > 0 and free_gb < 15.0):
-            status = "warning"
+        # Small storage partitions (<= 16 GB, e.g. Android TV) use percentage thresholds
+        if total_gb <= 16.0:
+            if percent_used >= 90 or (free_gb > 0 and free_gb < 0.6):
+                status = "critical"
+            elif percent_used >= 80 or (free_gb > 0 and free_gb < 1.2):
+                status = "warning"
+        else:
+            if percent_used >= 90 or (free_gb > 0 and free_gb < 8.0):
+                status = "critical"
+            elif percent_used >= 80 or (free_gb > 0 and free_gb < 15.0):
+                status = "warning"
 
         summary = (
             f"{used_gb} GB folosiți din {total_gb} GB ({percent_used}% • {free_gb} GB liberi)"
@@ -185,30 +195,48 @@ class PhoneDiagnostics:
         swap_percent_used = round((swap_used_mb / swap_total_mb) * 100) if swap_total_mb > 0 else 0
 
         status = "normal"
-        if ram_percent_used >= 88 or swap_percent_used >= 85 or (available_mb > 0 and available_mb < 900):
+        low_ram_threshold = 380 if total_mb <= 2500 else 900
+        if ram_percent_used >= 88 or swap_percent_used >= 85 or (available_mb > 0 and available_mb < low_ram_threshold):
             status = "critical"
-        elif ram_percent_used >= 78 or swap_percent_used >= 65:
+        elif ram_percent_used >= 78 or swap_percent_used >= 60:
             status = "warning"
 
         top_apps = []
-        ok_dumpsys, mem_dumpsys = self.adb.run_shell("dumpsys meminfo | head -n 45", self.serial, timeout=15)
-        if ok_dumpsys and mem_dumpsys:
-            seen_pkgs = set()
-            for line in mem_dumpsys.splitlines():
-                line = line.strip()
-                match = re.search(r"([\d,]+)K:\s+([a-zA-Z0-9_\.]+)\s*(?:\(pid|\()?", line)
-                if match:
-                    kb_str = match.group(1).replace(",", "").replace(".", "")
-                    pkg = match.group(2)
-                    if pkg in seen_pkgs or "." not in pkg:
-                        continue
-                    try:
-                        mb = round(int(kb_str) / 1024, 1)
-                        if mb > 90:
+        seen_pkgs = set()
+        # Use fast `ps -A -o RSS,ARGS` first (instant even on low-RAM Android TVs where dumpsys meminfo times out)
+        ok_ps, ps_out = self.adb.run_shell("ps -A -o RSS,ARGS", self.serial, timeout=6)
+        if ok_ps and ps_out:
+            min_mb = 35 if total_mb <= 2500 else 90
+            for line in ps_out.splitlines()[1:]:
+                parts = line.strip().split(None, 1)
+                if len(parts) == 2 and parts[0].isdigit():
+                    rss_kb = int(parts[0])
+                    cmd = parts[1].strip().split()[0]
+                    pkg = cmd.split(":")[0].strip()
+                    if "." in pkg and not pkg.startswith("/") and pkg not in seen_pkgs:
+                        mb = round(rss_kb / 1024, 1)
+                        if mb >= min_mb:
                             seen_pkgs.add(pkg)
                             top_apps.append({"package": pkg, "memory_mb": mb})
-                    except Exception:
-                        pass
+
+        if not top_apps:
+            ok_dumpsys, mem_dumpsys = self.adb.run_shell("dumpsys meminfo | head -n 45", self.serial, timeout=12)
+            if ok_dumpsys and mem_dumpsys:
+                for line in mem_dumpsys.splitlines():
+                    line = line.strip()
+                    match = re.search(r"([\d,]+)K:\s+([a-zA-Z0-9_\.]+)\s*(?:\(pid|\()?", line)
+                    if match:
+                        kb_str = match.group(1).replace(",", "").replace(".", "")
+                        pkg = match.group(2)
+                        if pkg in seen_pkgs or "." not in pkg:
+                            continue
+                        try:
+                            mb = round(int(kb_str) / 1024, 1)
+                            if mb > 50:
+                                seen_pkgs.add(pkg)
+                                top_apps.append({"package": pkg, "memory_mb": mb})
+                        except Exception:
+                            pass
 
         top_apps.sort(key=lambda x: x["memory_mb"], reverse=True)
 
@@ -460,8 +488,8 @@ class PhoneDiagnostics:
             "recent_crashes": crash_events[:10]
         }
 
-    def get_thermal_and_cpu_info(self, soc_name: str = "SoC") -> Dict[str, Any]:
-        """Monitors battery temperature, thermal throttling status, and top CPU processes."""
+    def get_thermal_and_cpu_info(self, soc_name: str = "SoC", is_tv: bool = False) -> Dict[str, Any]:
+        """Monitors battery/board temperature, thermal throttling status, and top CPU processes."""
         battery_temp_c = 0.0
         ok_bat, bat_out = self.adb.run_shell("dumpsys battery", self.serial)
         if ok_bat and bat_out:
@@ -479,10 +507,12 @@ class PhoneDiagnostics:
 
         thermal_status = "Răcoros / Fără limitări" if self.ro else "Cool / No Throttling"
         thermal_severity = "normal"
-        if battery_temp_c >= 41.5 or thermal_headroom_status >= 3:
+        warn_temp = 60.0 if is_tv else 38.0
+        crit_temp = 72.0 if is_tv else 41.5
+        if battery_temp_c >= crit_temp or thermal_headroom_status >= 3:
             thermal_status = "Throttling Sever Activ (Procesor limitat termic!)" if self.ro else "Severe Thermal Throttling Active!"
             thermal_severity = "critical"
-        elif battery_temp_c >= 38.0 or thermal_headroom_status >= 1:
+        elif battery_temp_c >= warn_temp or thermal_headroom_status >= 1:
             thermal_status = f"Cald (Limitare parțială {soc_name})" if self.ro else f"Warm (Light {soc_name} Throttling)"
             thermal_severity = "warning"
 

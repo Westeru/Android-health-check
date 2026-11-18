@@ -1,5 +1,7 @@
 import os
 import sys
+import socket
+import concurrent.futures
 import subprocess
 import shutil
 import re
@@ -8,7 +10,7 @@ import zipfile
 from typing import Optional, Dict, List, Tuple, Any
 
 class AdbManager:
-    """Manages ADB discovery (including bundled EXE & auto-download), USB & Wireless (Wi-Fi) connections, and device interactions."""
+    """Manages ADB discovery (including bundled EXE, auto-download & Android TV LAN scan), USB & Wireless connections."""
 
     PLATFORM_TOOLS_URL = "https://dl.google.com/android/repository/platform-tools-latest-windows.zip"
 
@@ -18,7 +20,6 @@ class AdbManager:
     def _find_or_provision_adb(self) -> str:
         """Locates adb executable in PyInstaller bundle, local folder, PATH, SDK, or auto-downloads official Google Platform Tools."""
         base_dirs = []
-        # 1. PyInstaller bundle temp directory (_MEIPASS)
         if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
             base_dirs.append(getattr(sys, "_MEIPASS"))
             base_dirs.append(os.path.dirname(sys.executable))
@@ -32,12 +33,10 @@ class AdbManager:
             if os.path.isfile(bundled_root):
                 return bundled_root
 
-        # 2. System PATH
         which_adb = shutil.which("adb")
         if which_adb and os.path.exists(which_adb):
             return which_adb
 
-        # 3. Common Windows SDK & AppData paths
         user_profile = os.environ.get("USERPROFILE", "")
         local_app_data = os.environ.get("LOCALAPPDATA", "")
         candidates = [
@@ -54,7 +53,6 @@ class AdbManager:
             if cand and os.path.isfile(cand):
                 return cand
 
-        # 4. Auto-download official Google Platform Tools for non-technical users
         auto_path = self.auto_download_adb()
         if auto_path and os.path.isfile(auto_path):
             return auto_path
@@ -90,13 +88,11 @@ class AdbManager:
         return None
 
     def _creation_flags(self) -> int:
-        """Prevents flashing console windows on Windows when spawning adb subprocesses."""
         if sys.platform == "win32":
             return getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
         return 0
 
     def is_available(self) -> bool:
-        """Checks if ADB binary is reachable and working."""
         try:
             res = subprocess.run(
                 [self.adb_path, "version"],
@@ -111,7 +107,7 @@ class AdbManager:
             return False
 
     def get_devices(self, lang: str = "en") -> List[Dict[str, Any]]:
-        """Returns list of connected devices (both USB and Wi-Fi) with status and model details."""
+        """Returns list of connected devices (USB, Wi-Fi, Android TV) with status and model details."""
         if not self.adb_path:
             return []
         ro = (lang == "ro")
@@ -135,7 +131,7 @@ class AdbManager:
                     serial = parts[0]
                     state = parts[1]
                     info = " ".join(parts[2:])
-                    model = "Dispozitiv Android" if ro else "Android Device"
+                    model = "Dispozitiv Android / TV" if ro else "Android Device / TV"
                     model_match = re.search(r"model:([^\s]+)", info)
                     if model_match:
                         model = model_match.group(1).replace("_", " ")
@@ -145,7 +141,7 @@ class AdbManager:
                         device_name = device_match.group(1)
 
                     is_wireless = (":" in serial) or ("_adb-tls" in serial)
-                    conn_label = "Wi-Fi (Wireless)" if is_wireless else ("Cablu USB" if ro else "USB Cable")
+                    conn_label = "Wi-Fi / LAN (Wireless)" if is_wireless else ("Cablu USB" if ro else "USB Cable")
 
                     devices.append({
                         "serial": serial,
@@ -160,11 +156,49 @@ class AdbManager:
         except Exception:
             return []
 
+    def _scan_lan_port_5555(self) -> List[Dict[str, str]]:
+        """Scans the local Wi-Fi/LAN subnet for Android TVs / devices listening on standard ADB TCP port 5555."""
+        found_tvs = []
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.settimeout(0.5)
+            s.connect(("8.8.8.8", 80))
+            local_ip = s.getsockname()[0]
+            s.close()
+            parts = local_ip.split(".")
+            if len(parts) != 4:
+                return []
+            prefix = ".".join(parts[:3])
+
+            def probe(host_id: int) -> Optional[str]:
+                ip = f"{prefix}.{host_id}"
+                if ip == local_ip:
+                    return None
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                    sock.settimeout(0.32)
+                    if sock.connect_ex((ip, 5555)) == 0:
+                        return ip
+                return None
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=64) as ex:
+                for ip in ex.map(probe, range(1, 255)):
+                    if ip:
+                        found_tvs.append({
+                            "name": "Android TV / ADB (:5555)",
+                            "address": f"{ip}:5555",
+                            "ip": ip,
+                            "port": "5555"
+                        })
+        except Exception:
+            pass
+        return found_tvs
+
     def discover_wireless_services(self) -> Dict[str, Any]:
-        """Uses `adb mdns services` to auto-discover phones with Wireless Debugging open on the same Wi-Fi."""
+        """Auto-discovers phones via mDNS AND Android TVs (Philips, Sony, TCL, Xiaomi, etc.) on LAN TCP port 5555."""
         ok, out = self.run_adb(["mdns", "services"], timeout=6)
         pairing_services = []
         connect_services = []
+        seen_addrs = set()
 
         if ok and out:
             for line in out.splitlines():
@@ -180,7 +214,15 @@ class AdbManager:
                     if "pairing" in stype:
                         pairing_services.append(entry)
                     else:
-                        connect_services.append(entry)
+                        if addr not in seen_addrs:
+                            seen_addrs.add(addr)
+                            connect_services.append(entry)
+
+        # Also scan LAN port 5555 for Android TVs (where 'USB debugging' opens port 5555 directly without mDNS)
+        for tv_entry in self._scan_lan_port_5555():
+            if tv_entry["address"] not in seen_addrs:
+                seen_addrs.add(tv_entry["address"])
+                connect_services.append(tv_entry)
 
         return {
             "pairing_services": pairing_services,
@@ -262,33 +304,52 @@ class AdbManager:
         }
 
     def connect_wireless(self, connect_addr: str, lang: str = "en") -> Dict[str, Any]:
-        """Connects to an already paired Android device over Wi-Fi (`adb connect <ip:port>`)."""
+        """Connects to an Android phone or Android TV over Wi-Fi/LAN (`adb connect <ip:port>`)."""
         ro = (lang == "ro")
         connect_addr = (connect_addr or "").strip()
-        if not re.match(r"^\d+\.\d+\.\d+\.\d+(:\d+)?$", connect_addr):
+        if re.match(r"^\d+\.\d+\.\d+\.\d+$", connect_addr):
+            connect_addr = f"{connect_addr}:5555"
+
+        if not re.match(r"^\d+\.\d+\.\d+\.\d+:\d+$", connect_addr):
             return {
                 "success": False,
                 "message": (
-                    "Format invalid pentru IP:Port. Exemplu corect: 192.168.1.105:41555"
-                    if ro else "Invalid IP:Port format. Example: 192.168.1.105:41555"
+                    "Format invalid pentru IP sau IP:Port. Exemplu: 192.168.86.48:5555"
+                    if ro else "Invalid IP or IP:Port format. Example: 192.168.86.48:5555"
                 )
             }
 
         ok, out = self.run_adb(["connect", connect_addr], timeout=12)
         combined = (out or "").strip()
-        success = ("connected to" in combined.lower()) and ("cannot connect" not in combined.lower()) and ("failed" not in combined.lower())
+        lower_out = combined.lower()
+
+        # On Android TV (port 5555), the first connect returns "failed to authenticate to <ip>:5555"
+        # while popping up the "Allow USB debugging?" dialog on the TV screen!
+        if "failed to authenticate" in lower_out:
+            return {
+                "success": True,
+                "needs_auth": True,
+                "address": connect_addr,
+                "message": (
+                    f"📺 Conectat la {connect_addr}! Privește acum ecranul televizorului / telefonului, bifează 'Permite întotdeauna de pe acest computer' și apasă pe 'Permiteți' (Allow) din telecomandă!"
+                    if ro else
+                    f"📺 Connected to {connect_addr}! Now look at your TV / phone screen, check 'Always allow from this computer', and press 'Allow' with your remote!"
+                )
+            }
+
+        success = ("connected to" in lower_out) and ("cannot connect" not in lower_out) and ("failed" not in lower_out)
 
         if success:
             return {
                 "success": True,
                 "address": connect_addr,
-                "message": f"📶 {'Conectat cu succes prin Wi-Fi la' if ro else 'Successfully connected via Wi-Fi to'} {connect_addr}!"
+                "message": f"📶 {'Conectat cu succes prin Wi-Fi/LAN la' if ro else 'Successfully connected via Wi-Fi/LAN to'} {connect_addr}!"
             }
         return {
             "success": False,
             "message": (
-                f"Nu s-a putut conecta la {connect_addr}: {combined}. Verifică dacă 'Depanare wireless' este activată pe telefon și dacă portul este cel corect."
-                if ro else f"Could not connect to {connect_addr}: {combined}. Verify that Wireless Debugging is enabled on the phone and the port is correct."
+                f"Nu s-a putut conecta la {connect_addr}: {combined}. Verifică dacă 'Depanare USB' (pe TV) sau 'Depanare wireless' (pe telefon) este activată."
+                if ro else f"Could not connect to {connect_addr}: {combined}. Verify that 'USB debugging' (on Android TV) or 'Wireless debugging' (on phone) is enabled."
             )
         }
 
@@ -308,7 +369,6 @@ class AdbManager:
         }
 
     def run_shell(self, cmd: str, serial: Optional[str] = None, timeout: int = 25) -> Tuple[bool, str]:
-        """Runs an adb shell command on the target device."""
         if not self.adb_path:
             return False, "ADB not found."
 
@@ -338,7 +398,6 @@ class AdbManager:
             return False, str(e)
 
     def run_adb(self, args: List[str], serial: Optional[str] = None, timeout: int = 25) -> Tuple[bool, str]:
-        """Runs a raw adb command."""
         if not self.adb_path:
             return False, "ADB not found."
 

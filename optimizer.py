@@ -13,14 +13,21 @@ class PhoneOptimizer:
         "android",
         "com.android.systemui",
         "com.google.android.apps.nexuslauncher",
+        "com.google.android.tvlauncher",
+        "com.google.android.leanbacklauncher",
+        "org.droidtv.ui",
+        "org.droidtv.playtv",
+        "org.droidtv.settings",
         "com.sec.android.app.launcher",
         "com.miui.home",
         "com.android.launcher",
         "com.android.launcher3",
         "com.google.android.inputmethod.latin",
+        "com.google.android.inputmethod.leanback",
         "com.samsung.android.honeyboard",
         "com.android.phone",
         "com.android.settings",
+        "com.android.tv.settings",
         "com.google.android.gms",
         "com.google.android.gsf",
         "com.google.android.ims",
@@ -35,6 +42,17 @@ class PhoneOptimizer:
         "com.android.chrome",
     ]
 
+    TV_UI_PACKAGES = [
+        "com.google.android.tvlauncher",
+        "com.google.android.tvrecommendations",
+        "com.google.android.leanbacklauncher",
+        "com.android.tv.settings",
+        "org.droidtv.ui",
+        "org.droidtv.settings",
+        "org.droidtv.playtv",
+        "org.droidtv.philipstvdrawer",
+    ]
+
     COMMON_BG_HOGS = [
         "com.google.android.aicore",
         "com.google.android.as.oss",
@@ -47,6 +65,31 @@ class PhoneOptimizer:
         "com.xiaomi.wearable",
         "com.xiaomi.hm.health",
         "com.tuya.smartlife",
+        # Android TV & Philips Smart TV notorious background RAM/CPU hogs:
+        "tv.samba.ssm",
+        "org.droidtv.esticker",
+        "org.droidtv.sticker",
+        "org.droidtv.demome",
+        "org.droidtv.candeebug",
+        "org.droidtv.usagelogger",
+        "org.droidtv.tv.frameworklogger",
+        "org.droidtv.dropboxprovider",
+        "org.droidtv.recommendation",
+        "org.droidtv.nettvrecommender",
+        "org.droidtv.nettv.market",
+        "org.droidtv.nettvbrowser",
+        "org.droidtv.nettvregistration",
+        "org.droidtv.nettvapps",
+        "org.droidtv.eum",
+        "org.droidtv.amazonalexa",
+        "org.droidtv.euinstallertc",
+        "org.droidtv.euinstallersat",
+        "com.phorus.playfi.tv",
+        "com.phorus.playfi.softap",
+        "com.vewd.core.browserui",
+        "com.google.android.tungsten.setupwraith",
+        "org.droidtv.Logger",
+        "com.google.android.leanbacklauncher.recommendations",
     ]
 
     def __init__(self, adb: AdbManager, serial: Optional[str] = None, progress_cb: ProgressCallback = None, lang: str = "en"):
@@ -60,9 +103,19 @@ class PhoneOptimizer:
         if self.progress_cb:
             self.progress_cb(step, total, current_task, log_msg)
 
+    def _is_android_tv(self) -> bool:
+        ok, out = self.adb.run_shell("getprop ro.build.characteristics", self.serial, timeout=4)
+        return bool(ok and out and "tv" in out.lower())
+
     def _get_ui_critical_packages(self) -> List[str]:
-        """Dynamically detects the active home launcher on any Android phone and combines with SystemUI & WebView."""
+        """Dynamically detects the active home launcher on any Android phone or Android TV and combines with SystemUI & WebView."""
         pkgs = list(self.BASE_UI_PACKAGES)
+        is_tv = self._is_android_tv()
+        if is_tv:
+            for tv_pkg in self.TV_UI_PACKAGES:
+                if tv_pkg not in pkgs:
+                    pkgs.append(tv_pkg)
+
         detected_launcher = None
 
         ok, out = self.adb.run_shell("cmd shortcut get-default-launcher", self.serial, timeout=5)
@@ -86,7 +139,7 @@ class PhoneOptimizer:
 
         if detected_launcher and detected_launcher not in pkgs:
             pkgs.insert(0, detected_launcher)
-        else:
+        elif not is_tv:
             pkgs.insert(0, "com.google.android.apps.nexuslauncher")
 
         return pkgs
@@ -443,23 +496,33 @@ class PhoneOptimizer:
                 "⏳ Se identifică și se opresc aplicațiile non-sistem care consumă mult RAM..." if self.ro else "⏳ Identifying and stopping non-system RAM hogs..."
             )
         stopped_apps = []
-        ok_mem, mem_out = self.adb.run_shell("dumpsys meminfo | head -n 45", self.serial, timeout=12)
-        if ok_mem and mem_out:
-            for line in mem_out.splitlines():
-                match = re.search(r"([\d,]+)K:\s+([a-zA-Z0-9_\.]+)\s*(?:\(pid|\()?", line.strip())
-                if match:
-                    pkg = self._normalize_package(match.group(2))
-                    if (
-                        "." in pkg
-                        and pkg not in self.PROTECTED_PACKAGES
-                        and not pkg.startswith("com.android.system")
-                        and not pkg.startswith("com.google.android.providers")
-                        and pkg not in stopped_apps
-                    ):
-                        self.adb.run_shell(f"am force-stop {pkg}", self.serial, timeout=5)
-                        stopped_apps.append(pkg)
-                        if len(stopped_apps) >= 6:
-                            break
+        ok_ps, ps_out = self.adb.run_shell("ps -A -o RSS,ARGS", self.serial, timeout=6)
+        if ok_ps and ps_out:
+            rows = []
+            for line in ps_out.splitlines()[1:]:
+                parts = line.strip().split(None, 1)
+                if len(parts) == 2 and parts[0].isdigit():
+                    rows.append((int(parts[0]), parts[1].strip().split()[0]))
+            rows.sort(key=lambda x: x[0], reverse=True)
+            for rss_kb, raw_cmd in rows:
+                if rss_kb < 30000:
+                    break
+                pkg = self._normalize_package(raw_cmd)
+                if (
+                    "." in pkg
+                    and not pkg.startswith("/")
+                    and pkg not in self.PROTECTED_PACKAGES
+                    and not pkg.startswith("com.android.system")
+                    and not pkg.startswith("com.google.android.providers")
+                    and not pkg.startswith("com.mediatek.")
+                    and not pkg.startswith("org.droidtv.tv.")
+                    and pkg not in ("org.droidtv.xtv", "org.droidtv.ambiair", "org.droidtv.philipstvdrawer", "org.droidtv.channels")
+                    and pkg not in stopped_apps
+                ):
+                    self.adb.run_shell(f"am force-stop {pkg}", self.serial, timeout=5)
+                    stopped_apps.append(pkg)
+                    if len(stopped_apps) >= 10:
+                        break
 
         ram_after = self.get_available_ram_mb()
         diff = max(0, ram_after - ram_before)
@@ -678,8 +741,14 @@ class PhoneOptimizer:
             "⏳ Se activează înghețarea rapidă a aplicațiilor din fundal (Android Cached App Freezer)..."
             if self.ro else "⏳ Enabling Android Cached App Freezer and tuning max_cached_processes..."
         )
+        is_tv = self._is_android_tv()
+        max_cached = 8 if is_tv else 24
         self.adb.run_shell("device_config put activity_manager_native_boot use_freezer true", self.serial, timeout=5)
-        self.adb.run_shell("device_config put activity_manager max_cached_processes 24", self.serial, timeout=5)
+        self.adb.run_shell(f"device_config put activity_manager max_cached_processes {max_cached}", self.serial, timeout=5)
+        if is_tv:
+            # On Android TV, Contacts Provider (acore) is unused and wastes ~45MB RAM
+            self.adb.run_shell("am force-stop com.android.providers.contacts", self.serial, timeout=5)
+            self.adb.run_shell("pm clear com.android.providers.contacts", self.serial, timeout=8)
 
         self._emit(
             5, 5,
@@ -791,6 +860,12 @@ class PhoneOptimizer:
         for bg_pkg in self.COMMON_BG_HOGS:
             self.adb.run_shell(f"am force-stop {bg_pkg}", self.serial, timeout=4)
             self.adb.run_shell(f"am set-standby-bucket {bg_pkg} restricted", self.serial, timeout=4)
+            self.adb.run_shell(f"cmd appops set {bg_pkg} RUN_ANY_IN_BACKGROUND ignore", self.serial, timeout=4)
+        if self._is_android_tv():
+            self.adb.run_shell("device_config put activity_manager max_cached_processes 8", self.serial, timeout=5)
+            self.adb.run_shell("am force-stop com.android.providers.contacts", self.serial, timeout=5)
+            self.adb.run_shell("logcat -c", self.serial, timeout=4)
+            self.adb.run_shell("logcat -G 256K", self.serial, timeout=4)
         ram_res = self.optimize_ram(emit_standalone=False)
         self._emit(step, total_steps, "Memorie RAM eliberată" if self.ro else "RAM freed", f"✓ {ram_res['message']}")
 
