@@ -1162,3 +1162,101 @@ body {
   gap: 10px;
   align-items: center;
 }
+
+/* Before vs After Comparison Card */
+.before-after-card {
+  margin-bottom: 24px;
+  border: 1px solid rgba(52, 168, 83, 0.45);
+  background: linear-gradient(135deg, rgba(16, 38, 28, 0.92), rgba(13, 19, 31, 0.95));
+}
+
+.ba-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.ba-box {
+  background: rgba(9, 13, 22, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.ba-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.ba-values {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.ba-gain {
+  font-size: 0.78rem;
+  color: #4ade80;
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+/* Remote Control & APK Sideloader Panel */
+.dpad-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 64px);
+  grid-template-rows: repeat(3, 46px);
+  gap: 8px;
+  justify-content: center;
+  margin: 12px auto;
+}
+
+.dpad-btn {
+  background: rgba(30, 41, 59, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 10px;
+  color: #f8fafc;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.dpad-btn:hover {
+  background: rgba(66, 133, 244, 0.35);
+  border-color: var(--google-blue);
+  transform: translateY(-1px);
+}
+
+.dpad-btn.dpad-ok {
+  background: var(--google-blue);
+  color: #fff;
+}
+
+.remote-quick-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 10px;
+}
+
+.apk-dropzone {
+  border: 2px dashed rgba(147, 197, 253, 0.4);
+  background: rgba(15, 23, 42, 0.6);
+  border-radius: 12px;
+  padding: 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-top: 10px;
+}
+
+.apk-dropzone:hover, .apk-dropzone.dragover {
+  border-color: var(--google-blue);
+  background: rgba(66, 133, 244, 0.14);
+}
+

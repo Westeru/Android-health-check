@@ -39,9 +39,18 @@ Pentru utilizatorii care **nu au Python sau Android Platform Tools instalate pe 
    - Monitorizează gradul de ocupare ZRAM și indicatorii *Pressure Stall Information* (`/proc/pressure/{cpu,memory,io}`).
    - Oprește serviciile parazite din fundal (servicii AI locale neutilizate, telemetrie, jurnale de debugging excesive) și activează *Android Cached App Freezer*.
 
-5. **Conectare Dublă: Cablu USB sau Wireless ADB (100% fără cablu)**:
-   - Ideal și pentru telefoanele cu portul USB uzat sau defect: include **auto-detecție mDNS** (`adb mdns services`), asociere cu cod din 6 cifre (`adb pair`) și conectare directă prin Wi-Fi (`adb connect`).
+5. **Conectare Dublă: Cablu USB sau Wireless ADB (100% fără cablu pentru Telefoane & Android TV)**:
+   - Ideal și pentru telefoanele cu portul USB uzat sau defect, precum și pentru **Android TV / Google TV Streamer**: include **auto-detecție mDNS** (`adb mdns services`), **scanare automată în rețea pe portul 5555** pentru televizoare, asociere cu cod din 6 cifre (`adb pair`) și conectare directă prin Wi-Fi (`adb connect`).
    - Comutator rapid de limbă **🇬🇧 EN / 🇷🇴 RO** direct în interfața web.
+
+6. **Dezinstalare Sigură Bloatware (Fără Root + Buton Undo / Restaurare 1-Clic)**:
+   - Detectează automat aplicațiile preinstalate inutile (Philips Demo/E-Sticker/NetTV/Loggere, Samba TV, Meta Background Services, Bixby/GOS, Xiaomi MSA Ads) și le dezinstalează fără Root (`pm uninstall -k --user 0`), cu buton **`♻️ Restaurează (Undo)`** care le readuce instant înapoi.
+
+7. **Telecomandă Virtuală, Tastatură PC-către-TV & Instalare APK Drag & Drop**:
+   - Controlează televizorul sau telefonul din browser, trimite text sau parole lungi direct de pe tastatura PC-ului și instalează orice fișier `.apk` prin Wi-Fi trăgându-l cu mouse-ul în fereastră!
+
+8. **AdGuard AdBlock DNS (Fără Root), Deep Doze, Analizor Stocare & Certificat de Sănătate**:
+   - Activare cu 1-clic a **DNS-ului Privat AdGuard (`dns.adguard-dns.com`)** pentru blocarea reclamelor în tot sistemul, **Deep Doze** pentru oprirea descărcării bateriei peste noapte, **Curățare `.thumbnails` și `.apk` reziduale**, **Comparație automată Înainte vs. După** și **Export Certificat de Sănătate HTML**.
 
 ---
 

@@ -33,6 +33,38 @@ class PhoneDiagnostics:
         "com.google.android.gms": "Google Play Services",
     }
 
+    KNOWN_BLOATWARE = {
+        # Philips & Android TV bloatware
+        "org.droidtv.demome": {"en": "Philips Retail Store Demo Mode", "ro": "Mod Demo Magazin Philips (Retail Demo)"},
+        "org.droidtv.sticker": {"en": "Philips Retail E-Sticker Overlay", "ro": "Overlay Reclame Magazin (E-Sticker)"},
+        "org.droidtv.esticker": {"en": "Philips E-Sticker Demo Service", "ro": "Serviciu Demo E-Sticker Philips"},
+        "org.droidtv.candeebug": {"en": "Philips Internal Debug Logger", "ro": "Serviciu Intern Debugging Philips (50MB RAM)"},
+        "org.droidtv.usagelogger": {"en": "Philips Usage Telemetry Logger", "ro": "Telemetrie Utilizare Philips"},
+        "org.droidtv.tv.frameworklogger": {"en": "Philips Framework Debug Logger", "ro": "Jurnal Intern Framework Philips"},
+        "org.droidtv.dropboxprovider": {"en": "Philips Crash Log Uploader", "ro": "Serviciu Trimitere Jurnale Eroare Philips"},
+        "org.droidtv.nettvbrowser": {"en": "Legacy Philips NetTV Browser", "ro": "Browser Vechi Philips NetTV (Consumă RAM în fundal)"},
+        "org.droidtv.nettv.market": {"en": "Legacy Philips App Gallery Store", "ro": "Magazin Vechi Philips App Gallery"},
+        "org.droidtv.nettvrecommender": {"en": "Philips NetTV Ad Recommender", "ro": "Recomandări & Reclame Philips NetTV"},
+        "org.droidtv.recommendation": {"en": "Philips Banner Recommendations", "ro": "Serviciu Recomandări Philips"},
+        "org.droidtv.eum": {"en": "Electronic User Manual (Background)", "ro": "Manual Electronic în Fundal (40MB RAM)"},
+        "com.vewd.core.browserui": {"en": "Vewd Legacy TV Browser Engine", "ro": "Motor Browser Vechi Vewd TV"},
+        "com.phorus.playfi.tv": {"en": "DTS Play-Fi Multiroom Daemon", "ro": "Serviciu Audio Multiroom DTS Play-Fi"},
+        "com.phorus.playfi.softap": {"en": "DTS Play-Fi Wi-Fi Hotspot Daemon", "ro": "Serviciu Hotspot DTS Play-Fi"},
+        "org.droidtv.amazonalexa": {"en": "Philips Amazon Alexa Background Agent", "ro": "Serviciu Amazon Alexa în Fundal"},
+        "tv.samba.ssm": {"en": "Samba TV ACR Tracking & Telemetry", "ro": "Telemetrie & Urmărire Ecran Samba TV"},
+        # Phone OEM & general bloatware
+        "com.facebook.services": {"en": "Meta/Facebook Background Services", "ro": "Servicii Meta/Facebook Preinstalate în Fundal"},
+        "com.facebook.system": {"en": "Meta App Installer Daemon", "ro": "Instalator Sistem Meta/Facebook"},
+        "com.facebook.appmanager": {"en": "Meta App Manager Background Service", "ro": "Manager Aplicații Meta în Fundal"},
+        "com.samsung.android.bixby.agent": {"en": "Samsung Bixby Voice Assistant", "ro": "Asistent Vocal Samsung Bixby"},
+        "com.samsung.android.app.spage": {"en": "Samsung Free / Daily Feed", "ro": "Samsung Free / Știri pe Ecran"},
+        "com.samsung.android.game.gos": {"en": "Samsung Game Optimizing Service (Throttler)", "ro": "Samsung Game Optimizing Service (Limitator)"},
+        "com.miui.msa.global": {"en": "MIUI System Ads (MSA)", "ro": "Serviciu Reclame în Sistem Xiaomi (MSA)"},
+        "com.miui.analytics": {"en": "Xiaomi Analytics & Telemetry", "ro": "Telemetrie & Analiză Xiaomi"},
+        "com.google.android.printservice.recommendation": {"en": "Print Service Recommendation Scanner", "ro": "Scaner Permanent Imprimante în Fundal"},
+        "com.google.android.feedback": {"en": "Google Crash & Feedback Reporter", "ro": "Raportare Erori & Telemetrie Feedback"},
+    }
+
     def __init__(self, adb: AdbManager, serial: Optional[str] = None, lang: str = "en"):
         self.adb = adb
         self.serial = serial
@@ -43,12 +75,16 @@ class PhoneDiagnostics:
         """Runs the complete diagnostic suite and aggregates findings."""
         device_info = self.get_device_info()
         storage = self.get_storage_info()
+        storage_breakdown = self.get_storage_breakdown()
         memory = self.get_memory_info()
         anrs_crashes = self.get_anr_and_crash_logs()
         thermals_cpu = self.get_thermal_and_cpu_info(device_info.get("soc", "SoC"), is_tv=device_info.get("is_tv", False))
         battery = self.get_battery_info()
         ui_fluency = self.get_ui_fluency_and_jank()
         system_pressure = self.get_psi_and_accessibility()
+        bloatware = self.get_bloatware_scan()
+        battery_drain = self.get_wakelocks_and_battery_drain()
+        security_audit = self.get_security_and_privacy_audit()
 
         system_health = self.calculate_health_score(
             storage, memory, anrs_crashes, thermals_cpu, battery, device_info, ui_fluency, system_pressure
@@ -59,13 +95,153 @@ class PhoneDiagnostics:
             "lang": self.lang,
             "device": device_info,
             "storage": storage,
+            "storage_breakdown": storage_breakdown,
             "memory": memory,
             "anrs_and_crashes": anrs_crashes,
             "thermals_and_cpu": thermals_cpu,
             "battery": battery,
             "ui_fluency": ui_fluency,
             "system_pressure": system_pressure,
+            "bloatware": bloatware,
+            "battery_drain": battery_drain,
+            "security_audit": security_audit,
             "health_evaluation": system_health
+        }
+
+    def get_bloatware_scan(self) -> Dict[str, Any]:
+        """Detects active bloatware that can be safely uninstalled (rootless) and previously removed bloatware that can be restored."""
+        ok_act, out_act = self.adb.run_shell("pm list packages", self.serial, timeout=8)
+        ok_all, out_all = self.adb.run_shell("pm list packages -u", self.serial, timeout=8)
+
+        active_set = set()
+        if ok_act and out_act:
+            for line in out_act.splitlines():
+                if line.startswith("package:"):
+                    active_set.add(line.replace("package:", "").strip())
+
+        all_set = set(active_set)
+        if ok_all and out_all:
+            for line in out_all.splitlines():
+                if line.startswith("package:"):
+                    all_set.add(line.replace("package:", "").strip())
+
+        active_bloat = []
+        removed_bloat = []
+        for pkg, labels in self.KNOWN_BLOATWARE.items():
+            desc = labels["ro"] if self.ro else labels["en"]
+            if pkg in active_set:
+                active_bloat.append({"package": pkg, "description": desc, "state": "active"})
+            elif pkg in all_set:
+                removed_bloat.append({"package": pkg, "description": desc, "state": "removed"})
+
+        return {
+            "active_count": len(active_bloat),
+            "removed_count": len(removed_bloat),
+            "active_bloatware": active_bloat,
+            "removed_bloatware": removed_bloat
+        }
+
+    def get_wakelocks_and_battery_drain(self) -> Dict[str, Any]:
+        """Detects active CPU WakeLocks keeping the device awake and checks Deep Doze status."""
+        wakelocks = []
+        seen_wl = set()
+        ok_pw, out_pw = self.adb.run_shell("dumpsys power | grep -E 'PARTIAL_WAKE_LOCK|Wake Locks: size'", self.serial, timeout=6)
+        if ok_pw and out_pw:
+            for line in out_pw.splitlines():
+                line = line.strip()
+                if "PARTIAL_WAKE_LOCK" in line:
+                    tag_m = re.search(r"PARTIAL_WAKE_LOCK\s+'([^']+)'", line)
+                    uid_m = re.search(r"uid=(\d+)", line)
+                    tag = tag_m.group(1) if tag_m else "WakeLock"
+                    key = f"{tag}_{uid_m.group(1) if uid_m else ''}"
+                    if key not in seen_wl:
+                        seen_wl.add(key)
+                        wakelocks.append({"tag": tag, "raw": line[:120]})
+
+        doze_enabled = True
+        ok_dz, out_dz = self.adb.run_shell("dumpsys deviceidle enabled", self.serial, timeout=5)
+        if ok_dz and out_dz and out_dz.strip() == "0":
+            doze_enabled = False
+
+        return {
+            "active_wakelocks_count": len(wakelocks),
+            "wakelocks": wakelocks[:10],
+            "deep_doze_enabled": doze_enabled
+        }
+
+    def get_storage_breakdown(self) -> Dict[str, Any]:
+        """Scans /sdcard top folders, leftover .apk installers in Download, and thumbnail cache size."""
+        folders = []
+        ok_du, out_du = self.adb.run_shell("du -m -d 1 /sdcard 2>/dev/null | sort -rn | head -n 10", self.serial, timeout=10)
+        if ok_du and out_du:
+            for line in out_du.splitlines():
+                parts = line.strip().split(None, 1)
+                if len(parts) == 2 and parts[0].isdigit():
+                    size_mb = int(parts[0])
+                    path = parts[1].strip()
+                    if path != "/sdcard" and size_mb >= 5:
+                        folders.append({"path": path, "size_mb": size_mb})
+
+        apk_files = []
+        ok_apk, out_apk = self.adb.run_shell("find /sdcard/Download -maxdepth 2 -name '*.apk' 2>/dev/null", self.serial, timeout=6)
+        if ok_apk and out_apk:
+            for line in out_apk.splitlines():
+                line = line.strip()
+                if line.endswith(".apk"):
+                    apk_files.append(line)
+
+        thumb_mb = 0
+        ok_th, out_th = self.adb.run_shell("du -sm /sdcard/DCIM/.thumbnails 2>/dev/null", self.serial, timeout=5)
+        if ok_th and out_th:
+            parts = out_th.strip().split()
+            if parts and parts[0].isdigit():
+                thumb_mb = int(parts[0])
+
+        return {
+            "top_folders": folders[:8],
+            "leftover_apks_count": len(apk_files),
+            "leftover_apks": apk_files[:10],
+            "thumbnails_cache_mb": thumb_mb
+        }
+
+    def get_security_and_privacy_audit(self) -> Dict[str, Any]:
+        """Audits Private DNS (AdGuard AdBlock status) and sideloaded third-party packages."""
+        ok_mode, mode_out = self.adb.run_shell("settings get global private_dns_mode", self.serial, timeout=5)
+        ok_host, host_out = self.adb.run_shell("settings get global private_dns_specifier", self.serial, timeout=5)
+        dns_mode = (mode_out or "").strip()
+        dns_host = (host_out or "").strip()
+        if dns_host == "null":
+            dns_host = ""
+
+        adguard_active = (dns_mode == "hostname" and "adguard" in dns_host.lower())
+
+        sideloaded_apps = []
+        trusted_installers = {
+            "com.android.vending",
+            "com.google.android.packageinstaller",
+            "com.android.packageinstaller",
+            "com.sec.android.app.samsungapps",
+            "com.xiaomi.mipicks",
+            "org.droidtv.nettv.market",
+        }
+        ok_inst, out_inst = self.adb.run_shell("pm list packages -3 -i", self.serial, timeout=8)
+        if ok_inst and out_inst:
+            for line in out_inst.splitlines():
+                m = re.search(r"package:([^\s]+)\s+installer=([^\s]+)", line.strip())
+                if m:
+                    pkg, installer = m.group(1), m.group(2)
+                    if installer not in trusted_installers:
+                        sideloaded_apps.append({
+                            "package": pkg,
+                            "installer": ("Necunoscut / APK Manual" if self.ro else "Unknown / Manual Sideload") if installer == "null" else installer
+                        })
+
+        return {
+            "private_dns_mode": dns_mode,
+            "private_dns_host": dns_host,
+            "adguard_active": adguard_active,
+            "sideloaded_count": len(sideloaded_apps),
+            "sideloaded_apps": sideloaded_apps[:15]
         }
 
     def get_device_info(self) -> Dict[str, Any]:

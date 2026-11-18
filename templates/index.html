@@ -21,14 +21,17 @@
           </svg>
         </div>
         <div>
-          <h1>Android Health Doctor <span style="font-size:0.8rem; color:#93c5fd; font-weight:600;">Universal ADB Suite</span></h1>
-          <p class="subtitle" data-i18n="header_subtitle">Deep diagnostics & repair for UI Jank, App Freezes (ANRs), System Databases & ART Compilation (USB / Wi-Fi)</p>
+          <h1>Android Health Doctor <span style="font-size:0.8rem; color:#93c5fd; font-weight:600;">Universal Phone & TV Suite</span></h1>
+          <p class="subtitle" data-i18n="header_subtitle">Deep diagnostics & repair for UI Jank, App Freezes (ANRs), System Databases, Bloatware & ART Compilation (USB / Wi-Fi)</p>
         </div>
       </div>
 
       <div class="header-actions">
         <button id="langToggleBtn" class="btn btn-secondary" onclick="window.toggleLanguage()" title="Switch Language (English / Română)">
           🌐 <span id="langToggleLabel">🇬🇧 EN | 🇷🇴 RO</span>
+        </button>
+        <button id="toggleRemoteBtn" class="btn btn-secondary" style="border-color: rgba(168, 85, 247, 0.5); color: #d8b4fe;" onclick="window.toggleRemotePanel()" data-i18n="btn_remote_header">
+          🎮 Remote & APK Sideload
         </button>
         <button id="toggleWirelessBtn" class="btn btn-secondary" style="border-color: rgba(66, 133, 244, 0.5); color: #93c5fd;" data-i18n="btn_wireless_header">
           📶 Wireless ADB (No USB)
@@ -39,7 +42,7 @@
             <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
             <line x1="12" y1="17" x2="12.01" y2="17"></line>
           </svg>
-          <span data-i18n="btn_guide">ADB Setup Guide (USB / Wi-Fi)</span>
+          <span data-i18n="btn_guide">ADB Setup Guide</span>
         </button>
       </div>
     </header>
@@ -53,7 +56,7 @@
         </div>
         <div class="status-text-group">
           <h3 id="connStatusTitle">Searching for Android device...</h3>
-          <p id="connStatusDesc">Connect your phone via USB cable or click "📶 Wireless ADB (No USB)".</p>
+          <p id="connStatusDesc">Connect your phone or Android TV via USB cable or click "📶 Wireless ADB (No USB)".</p>
           <div id="deviceSelectorWrap" class="device-selector-wrap hidden">
             <label for="deviceSelector" data-i18n="lbl_active_device">Active device:</label>
             <select id="deviceSelector" class="device-select"></select>
@@ -76,8 +79,79 @@
             <circle cx="11" cy="11" r="8"></circle>
             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           </svg>
-          <span data-i18n="btn_scan_phone">Scan Phone</span>
+          <span data-i18n="btn_scan_phone">Scan Device</span>
         </button>
+      </div>
+    </section>
+
+    <!-- Virtual Remote Control, PC Keyboard & Drag-and-Drop APK Sideloader Panel -->
+    <section id="remoteCard" class="card wireless-card hidden">
+      <div class="wireless-header">
+        <div>
+          <h3 data-i18n="remote_panel_title">🎮 Virtual Remote Control, PC Keyboard & APK Sideloader</h3>
+          <p class="subtitle" data-i18n="remote_panel_subtitle">Control your Android TV / Google TV Streamer / Phone, type text from PC, or install .APK files over Wi-Fi</p>
+        </div>
+        <button class="btn-mini" onclick="window.toggleRemotePanel()" data-i18n="btn_hide">✕ Hide</button>
+      </div>
+
+      <div class="wireless-grid">
+        <!-- Left: D-Pad Remote & Keyboard -->
+        <div class="wireless-box">
+          <h4 data-i18n="remote_dpad_title">📺 D-Pad Remote & Fast PC Text Input</h4>
+          <div class="dpad-grid">
+            <div></div>
+            <button class="dpad-btn" onclick="window.sendRemoteKey('KEYCODE_DPAD_UP')">▲</button>
+            <div></div>
+            <button class="dpad-btn" onclick="window.sendRemoteKey('KEYCODE_DPAD_LEFT')">◀</button>
+            <button class="dpad-btn dpad-ok" onclick="window.sendRemoteKey('KEYCODE_DPAD_CENTER')">OK</button>
+            <button class="dpad-btn" onclick="window.sendRemoteKey('KEYCODE_DPAD_RIGHT')">▶</button>
+            <div></div>
+            <button class="dpad-btn" onclick="window.sendRemoteKey('KEYCODE_DPAD_DOWN')">▼</button>
+            <div></div>
+          </div>
+          <div class="remote-quick-row">
+            <button class="btn btn-action-small" onclick="window.sendRemoteKey('KEYCODE_BACK')">↩ Back</button>
+            <button class="btn btn-action-small" onclick="window.sendRemoteKey('KEYCODE_HOME')">🏠 Home</button>
+            <button class="btn btn-action-small" onclick="window.sendRemoteKey('KEYCODE_MENU')">☰ Menu</button>
+            <button class="btn btn-action-small" onclick="window.sendRemoteKey('KEYCODE_MEDIA_PLAY_PAUSE')">⏯ Play/Pause</button>
+            <button class="btn btn-action-small" onclick="window.sendRemoteKey('KEYCODE_VOLUME_DOWN')">🔉 Vol -</button>
+            <button class="btn btn-action-small" onclick="window.sendRemoteKey('KEYCODE_VOLUME_UP')">🔊 Vol +</button>
+            <button class="btn btn-action-small" onclick="window.sendRemoteKey('KEYCODE_VOLUME_MUTE')">🔇 Mute</button>
+          </div>
+          <div class="form-row" style="margin-top: 14px;">
+            <label data-i18n="lbl_remote_text">Type Text / Password / Search from PC directly onto Screen:</label>
+            <div style="display:flex; gap:8px;">
+              <input type="text" id="remoteTextInput" class="text-input" style="flex:1;" placeholder="Type here and press Send...">
+              <button class="btn btn-primary" onclick="window.sendRemoteText(true)" data-i18n="btn_send_text">⌨️ Send + Enter</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: APK Drag & Drop Sideloader & Clean TV Mode -->
+        <div class="wireless-box">
+          <h4 data-i18n="apk_sideload_title">📦 Wireless APK Sideloader (Drag & Drop)</h4>
+          <p class="wireless-box-desc" data-i18n="apk_sideload_desc">
+            Install any Android `.apk` file directly from your PC onto your Android TV, Google TV Streamer, or Phone over Wi-Fi/USB:
+          </p>
+          <input type="file" id="apkFileInput" accept=".apk" class="hidden" onchange="window.handleApkFileSelect(this.files)">
+          <div id="apkDropzone" class="apk-dropzone" onclick="document.getElementById('apkFileInput').click()">
+            <div style="font-size:1.8rem; margin-bottom:6px;">📲</div>
+            <strong data-i18n="apk_drop_label">Click to select an .APK file or Drag & Drop it here</strong>
+            <p style="font-size:0.78rem; color:#94a3b8; margin-top:4px;" data-i18n="apk_drop_hint">Installs automatically via adb install -r</p>
+          </div>
+
+          <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.08);">
+            <h4 data-i18n="tv_clean_mode_title">📺 Android TV Clean Home & AdGuard AdBlock</h4>
+            <div class="wireless-btn-row" style="margin-top:8px;">
+              <button class="btn btn-action-small" onclick="executeOptimization('tv_clean_home')" data-i18n="btn_tv_clean_home">
+                📺 Stop TV Banner Ad Services
+              </button>
+              <button class="btn btn-action-small" onclick="executeOptimization('enable_adguard_dns')" data-i18n="btn_enable_adguard">
+                🛡️ Enable AdGuard AdBlock DNS
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -85,22 +159,21 @@
     <section id="wirelessCard" class="card wireless-card hidden">
       <div class="wireless-header">
         <div>
-          <h3 data-i18n="wireless_title">📶 Wireless ADB Connection (Cable-Free / Broken USB Port)</h3>
-          <p class="subtitle" data-i18n="wireless_subtitle">Connect any Android 11+ phone directly over your local Wi-Fi network</p>
+          <h3 data-i18n="wireless_title">📶 Wireless ADB Connection (Phones & Android TV / Google TV)</h3>
+          <p class="subtitle" data-i18n="wireless_subtitle">Connect any Android 11+ phone or Android TV (:5555) directly over your local Wi-Fi network</p>
         </div>
         <div class="wireless-header-actions">
           <button id="discoverMdnsBtn" class="btn btn-action-small" onclick="window.discoverWirelessPhones()" data-i18n="btn_mdns_discover">
-            🔍 Auto-Discover Phone on Wi-Fi
+            🔍 Auto-Discover Phones & TVs on Wi-Fi
           </button>
           <button class="btn-mini" onclick="window.toggleWirelessPanel()" data-i18n="btn_hide">✕ Hide</button>
         </div>
       </div>
 
       <div class="wireless-steps-banner" id="wirelessStepsBanner">
-        <strong>How to enable on phone (without cable):</strong>
-        1. Connect phone to the same Wi-Fi as this PC. &bull;
-        2. Go to <em>Settings &rarr; Developer options &rarr; <strong>Wireless debugging</strong></em> and turn it ON. &bull;
-        3. Tap on the <strong>Wireless debugging</strong> text to see your IP address and pairing code option.
+        <strong>How to enable (without cable):</strong>
+        &bull; <strong>On Phone:</strong> Settings &rarr; Developer options &rarr; <strong>Wireless debugging</strong>.
+        &bull; <strong>On Android TV / Google TV Streamer:</strong> Settings &rarr; System &rarr; Developer options &rarr; <strong>USB debugging</strong> (automatically opens Wi-Fi port 5555!).
       </div>
 
       <div id="mdnsDiscoveryBox" class="mdns-discovery-box hidden"></div>
@@ -108,7 +181,7 @@
       <div class="wireless-grid">
         <!-- Step 1: Pairing -->
         <div class="wireless-box">
-          <h4 data-i18n="pair_step_title">1️⃣ First-Time Setup: Pair with 6-Digit Code</h4>
+          <h4 data-i18n="pair_step_title">1️⃣ First-Time Phone Setup: Pair with 6-Digit Code</h4>
           <p class="wireless-box-desc" data-i18n="pair_step_desc">
             On your phone, tap <strong>"Pair device with pairing code"</strong> and enter the details shown in the popup:
           </p>
@@ -133,17 +206,17 @@
 
         <!-- Step 2: Direct Connect -->
         <div class="wireless-box">
-          <h4 data-i18n="conn_step_title">2️⃣ Direct Connect (Already Paired)</h4>
+          <h4 data-i18n="conn_step_title">2️⃣ Direct Connect (Android TV :5555 or Paired Phone)</h4>
           <p class="wireless-box-desc" data-i18n="conn_step_desc">
-            If this PC is already paired with your phone, enter the <strong>IP address & Port</strong> shown on the main <em>Wireless debugging</em> screen:
+            For Android TV / Google TV Streamer (just enter its IP or IP:5555) or an already paired phone:
           </p>
           <div class="form-row">
-            <label data-i18n="lbl_conn_ip">Connection IP & Port (from Wireless debugging screen):</label>
-            <input type="text" id="connectAddrInput" class="text-input" placeholder="e.g. 192.168.1.105:41555">
+            <label data-i18n="lbl_conn_ip">Device IP or IP:Port:</label>
+            <input type="text" id="connectAddrInput" class="text-input" placeholder="e.g. 192.168.86.48:5555">
           </div>
           <div class="wireless-btn-row" style="margin-top:16px;">
             <button id="connectSubmitBtn" class="btn btn-accent" style="flex:1;" onclick="window.submitWirelessConnect()" data-i18n="btn_conn_submit">
-              📶 Connect via Wi-Fi
+              📶 Connect via Wi-Fi / LAN
             </button>
             <button class="btn btn-secondary" onclick="window.disconnectWirelessAll()" data-i18n="btn_disconnect_wifi">
               🔌 Disconnect Wi-Fi
@@ -181,25 +254,44 @@
       <div id="liveFinishBanner" class="live-finish-banner hidden">
         <div id="liveFinishText" class="live-finish-text"></div>
         <div class="live-finish-actions">
-          <button class="btn btn-primary" onclick="window.triggerRescanFromConsole()" data-i18n="btn_rescan_now">🔍 Rescan Phone Now</button>
-          <button class="btn btn-secondary" onclick="executeOptimization('reboot')" data-i18n="btn_reboot_zram">🔄 Reboot Phone (Recommended to flush ZRAM)</button>
+          <button class="btn btn-primary" onclick="window.triggerRescanFromConsole()" data-i18n="btn_rescan_now">🔍 Rescan Device Now</button>
+          <button class="btn btn-secondary" onclick="executeOptimization('reboot')" data-i18n="btn_reboot_zram">🔄 Reboot Device (Flush ZRAM)</button>
         </div>
       </div>
     </section>
 
-    <!-- Scan Progress Bar (Hidden by default) -->
+    <!-- Scan Progress Bar -->
     <div id="scanProgressBar" class="progress-container hidden">
       <div class="progress-bar-animated"></div>
-      <span class="progress-label" data-i18n="scan_progress_label">Analyzing GPU frame drops (UI Jank), ANR/crash logs, system SQLite databases, ZRAM swap, and storage...</span>
+      <span class="progress-label" data-i18n="scan_progress_label">Analyzing GPU frame drops (UI Jank), ANR/crash logs, bloatware, wakelocks, system SQLite databases, ZRAM swap, and storage...</span>
     </div>
 
-    <!-- Main Results (Hidden initially until scanned) -->
+    <!-- Main Results -->
     <main id="resultsArea" class="results-area hidden">
+      <!-- Before vs. After Comparison Banner (Appears automatically when gains are detected) -->
+      <section id="beforeAfterCard" class="card before-after-card hidden">
+        <div class="card-title-row">
+          <div class="title-with-icon">
+            <span style="font-size:1.3rem;">📈</span>
+            <h3 data-i18n="ba_card_title">Before vs. After Optimization Results</h3>
+          </div>
+          <button class="btn btn-action-small" onclick="window.exportHealthCertificate()" data-i18n="btn_export_cert">
+            📄 Export Health Certificate (HTML)
+          </button>
+        </div>
+        <div id="beforeAfterGrid" class="ba-grid"></div>
+      </section>
+
       <!-- Quick Fix Toolbar -->
       <section class="card quick-toolbar-card">
-        <div class="toolbar-header">
-          <h4 data-i18n="toolbar_title">🛠️ Quick Repair & Optimization Bar (Universal Android)</h4>
-          <span class="toolbar-hint" data-i18n="toolbar_hint">Direct non-destructive ADB actions to eliminate UI stutter, unlock system databases, and free memory</span>
+        <div class="toolbar-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+          <div>
+            <h4 data-i18n="toolbar_title">🛠️ Quick Repair & Optimization Bar (Phone & Android TV)</h4>
+            <span class="toolbar-hint" data-i18n="toolbar_hint">Direct non-destructive ADB actions to eliminate UI stutter, unlock system databases, block ads, and free memory</span>
+          </div>
+          <button class="btn btn-action-small" onclick="window.exportHealthCertificate()" data-i18n="btn_export_cert">
+            📄 Export Health Certificate (HTML)
+          </button>
         </div>
         <div class="toolbar-buttons">
           <button class="btn btn-accent" onclick="executeOptimization('deep_boost_all')" data-i18n="tb_fix_all">
@@ -209,16 +301,19 @@
             📇 Repair System Databases (Contacts / MediaStore / Sync)
           </button>
           <button class="btn btn-secondary" style="border-color: rgba(251, 188, 5, 0.5); color: #fde047;" onclick="executeOptimization('debloat_pixel8')" data-i18n="tb_fix_zram">
-            🧠 Relieve ZRAM & Stop Parasitic Daemons (AI / Telemetry)
+            🧠 Relieve ZRAM & Stop Parasitic Daemons
           </button>
           <button class="btn btn-secondary" onclick="executeOptimization('fix_ui_stutter')" data-i18n="tb_fix_stutter">
-            🚀 Fix UI Stutter (120Hz + 0.5x Animations + Launcher/WebView)
+            🚀 Fix UI Stutter (120Hz + 0.5x Animations + Launcher)
           </button>
-          <button class="btn btn-secondary" onclick="executeOptimization('optimize_ram')" data-i18n="tb_free_ram">
-            🧹 Free RAM & Stop Background Hogs
+          <button class="btn btn-secondary" style="border-color: rgba(52, 168, 83, 0.5); color: #86efac;" onclick="executeOptimization('enable_adguard_dns')" data-i18n="tb_adguard">
+            🛡️ Enable AdGuard AdBlock DNS
           </button>
-          <button class="btn btn-secondary" onclick="executeOptimization('fstrim')" data-i18n="tb_fstrim">
-            💾 Flash TRIM (fstrim) & Cache Clean
+          <button class="btn btn-secondary" onclick="executeOptimization('enable_deep_doze')" data-i18n="tb_deep_doze">
+            🌙 Enable Deep Doze (Battery Saver)
+          </button>
+          <button class="btn btn-secondary" onclick="executeOptimization('clean_storage_junk')" data-i18n="tb_clean_junk">
+            📦 Deep Storage & Junk Clean
           </button>
           <button class="btn btn-secondary" onclick="executeOptimization('restore_animations')" data-i18n="tb_restore_anim">
             🔄 Default Animations (1.0x)
@@ -261,6 +356,26 @@
         <div id="recommendationsList" class="recommendations-grid"></div>
       </section>
 
+      <!-- Smart Bloatware Uninstaller (Rootless + 1-Click Undo/Restore) -->
+      <section class="card anr-card">
+        <div class="card-title-row">
+          <div class="title-with-icon">
+            <span style="font-size:1.3rem;">🧹</span>
+            <h3 data-i18n="bloat_section_title">Smart Bloatware Uninstaller (Rootless + 1-Click Undo / Restore)</h3>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <span id="bloatCountBadge" class="badge info">0 Detected</span>
+            <button id="removeAllBloatBtn" class="btn btn-action-small btn-danger-small" onclick="executeOptimization('debloat_uninstall_all')" data-i18n="btn_remove_all_bloat">
+              🗑️ Remove All Detected Bloatware
+            </button>
+          </div>
+        </div>
+        <p class="section-desc" data-i18n="bloat_section_desc">
+          Preinstalled OEM / TV bloatware that consumes RAM and telemetry in the background. Uninstalling removes them for your user profile without Root, and you can restore any package anytime with 1 click!
+        </p>
+        <div id="bloatwareList" class="anr-list"></div>
+      </section>
+
       <!-- Universal Per-App Repair Tool -->
       <section class="card anr-card">
         <div class="card-title-row">
@@ -276,14 +391,15 @@
           <button class="btn btn-action-small" onclick="window.loadInstalledPackages()" data-i18n="btn_load_packages">🔄 Load Installed Apps</button>
         </div>
         <p class="section-desc" data-i18n="custom_app_desc">
-          Have a specific app that loads slowly, freezes, or drains battery in the background? Select or type its package name below to repair it:
+          Have a specific app that loads slowly, freezes, or drains battery in the background? Select or type its package name below:
         </p>
         <div class="custom-app-repair-bar">
-          <input type="text" id="customPkgInput" list="installedPackagesList" class="text-input" style="flex:1; min-width:240px;" placeholder="Search or type package name (e.g. com.whatsapp, com.instagram.android)...">
+          <input type="text" id="customPkgInput" list="installedPackagesList" class="text-input" style="flex:1; min-width:240px;" placeholder="Search or type package name (e.g. com.whatsapp, com.stremio.one)...">
           <datalist id="installedPackagesList"></datalist>
           <button class="btn btn-primary" onclick="window.runCustomAppAction('deep_repair_app')" data-i18n="btn_custom_repair">🔧 Repair & Speed Compile (Keep Data)</button>
           <button class="btn btn-action-small btn-warn-small" onclick="window.runCustomAppAction('restrict_app_background')" data-i18n="btn_custom_restrict">🛑 Restrict Background</button>
-          <button class="btn btn-action-small btn-danger-small" onclick="window.runCustomAppAction('clear_package_cache')" data-i18n="btn_custom_reset">🗑️ Full Data Reset</button>
+          <button class="btn btn-action-small btn-danger-small" onclick="window.runCustomAppAction('debloat_uninstall')" data-i18n="btn_custom_uninstall">🗑️ Uninstall (User 0)</button>
+          <button class="btn btn-action-small" onclick="window.runCustomAppAction('debloat_restore')" data-i18n="btn_custom_restore">♻️ Restore (Undo)</button>
         </div>
       </section>
 
@@ -314,7 +430,7 @@
         <div class="card stat-card">
           <div class="card-header-clean">
             <span class="card-icon storage-icon">💾</span>
-            <h4 data-i18n="card_storage_title">Internal UFS Storage</h4>
+            <h4 data-i18n="card_storage_title">Internal Flash Storage</h4>
           </div>
           <div class="storage-meter-wrapper">
             <div class="meter-bar">
@@ -352,7 +468,7 @@
             <h4 id="socCardTitle" data-i18n="card_thermal_title">Thermals & Processor</h4>
           </div>
           <div class="metric-row">
-            <span class="metric-label" data-i18n="lbl_bat_temp">Battery Temperature:</span>
+            <span class="metric-label" data-i18n="lbl_bat_temp">Temperature:</span>
             <span id="tempVal" class="metric-val">-- °C</span>
           </div>
           <div class="metric-row">
@@ -364,6 +480,38 @@
             <span id="uptimeVal" class="metric-val">--</span>
           </div>
           <p id="thermalStatusNote" class="stat-status-note"></p>
+        </div>
+      </div>
+
+      <!-- Security, AdGuard Private DNS & Overnight Battery/Storage Breakdown -->
+      <div class="dual-columns">
+        <!-- Left: Security & AdGuard DNS Card -->
+        <div class="card list-card">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
+            <h4 style="margin-bottom:0;" data-i18n="sec_card_title">🛡️ AdGuard AdBlock DNS & Sideloaded Apps Audit</h4>
+            <span id="dnsStatusBadge" class="badge info">DNS</span>
+          </div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+            <button class="btn btn-action-small" onclick="executeOptimization('enable_adguard_dns')" data-i18n="btn_enable_adguard">
+              🛡️ Enable AdGuard AdBlock DNS
+            </button>
+            <button class="btn btn-action-small" onclick="executeOptimization('disable_private_dns')" data-i18n="btn_disable_adguard">
+              🔄 Restore Default DNS
+            </button>
+          </div>
+          <ul id="securityAuditList" class="item-list"></ul>
+        </div>
+
+        <!-- Right: Storage Breakdown & WakeLocks / Deep Doze Card -->
+        <div class="card list-card">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
+            <h4 style="margin-bottom:0;" data-i18n="storage_wl_title">📦 Storage Folders & 🔋 Active WakeLocks</h4>
+            <div style="display:flex; gap:6px;">
+              <button class="btn btn-action-small" onclick="executeOptimization('clean_storage_junk')" data-i18n="btn_clean_junk_small">📦 Clean Junk</button>
+              <button class="btn btn-action-small" onclick="executeOptimization('enable_deep_doze')" data-i18n="btn_deep_doze_small">🌙 Deep Doze</button>
+            </div>
+          </div>
+          <ul id="storageBreakdownList" class="item-list"></ul>
         </div>
       </div>
 
@@ -421,25 +569,25 @@
     <div id="guideModal" class="modal-overlay hidden">
       <div class="modal-box">
         <div class="modal-header">
-          <h3 data-i18n="modal_guide_title">How to Enable USB or Wireless Debugging on Android</h3>
+          <h3 data-i18n="modal_guide_title">How to Enable USB or Wireless Debugging on Phone & Android TV</h3>
           <button id="closeGuideBtn" class="close-btn">&times;</button>
         </div>
         <div class="modal-content">
           <ol class="steps-list" id="modalStepsList">
             <li>
-              <strong>Open Settings</strong> on your Android phone (Samsung, Pixel, Xiaomi, OnePlus, Motorola, etc.).
+              <strong>Open Settings</strong> on your Android Phone or Android TV / Google TV Streamer.
             </li>
             <li>
-              Go to <strong>About phone</strong> &rarr; find <strong>Build number</strong> (or MIUI / OS Version) and tap it rapidly <strong>7 times</strong> until you see <em>"You are now a developer!"</em>.
+              Go to <strong>About phone / About TV</strong> &rarr; find <strong>Build number</strong> (or OS Version) and tap/click it <strong>7 times</strong> until you see <em>"You are now a developer!"</em>.
             </li>
             <li>
-              Go to <strong>Settings &rarr; System / Additional settings &rarr; Developer options</strong>.
+              Go to <strong>Settings &rarr; System &rarr; Developer options</strong>.
             </li>
             <li>
-              <strong>For USB Cable:</strong> Enable <strong>USB debugging</strong>, plug in the cable, and tap <strong>Allow</strong> on the phone screen.
+              <strong>For Android TV / Google TV Streamer (Wi-Fi):</strong> Enable <strong>USB debugging</strong> (on Android TV this automatically opens Wi-Fi debugging on port 5555!) and click <em>🔍 Auto-Discover</em> in our Wireless panel.
             </li>
             <li>
-              <strong>For Wi-Fi (Cable-Free):</strong> Enable <strong>Wireless debugging</strong>, tap on its text to open the pairing screen, and use the <em>📶 Wireless ADB</em> panel in this app.
+              <strong>For Phones (USB or Wi-Fi):</strong> Enable <strong>USB debugging</strong> (for cable) or <strong>Wireless debugging</strong> (for Wi-Fi pairing).
             </li>
           </ol>
         </div>

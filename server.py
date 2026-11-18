@@ -1,10 +1,11 @@
 import os
 import sys
 import time
+import tempfile
 import datetime
 import threading
 from typing import Optional, Dict, Any, List
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
@@ -41,6 +42,7 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 adb = AdbManager()
 last_report: Optional[dict] = None
+initial_baselines: Dict[str, Dict[str, Any]] = {}
 
 # Live job tracking state so the UI can show real-time step-by-step progress
 job_lock = threading.Lock()
@@ -219,6 +221,21 @@ def run_scan(req: dict = None):
     try:
         diag = PhoneDiagnostics(adb, target_serial, lang=lang)
         report = diag.run_full_scan()
+
+        snap = {
+            "timestamp": report["timestamp"],
+            "score": report["health_evaluation"]["score"],
+            "available_mb": report["memory"]["available_mb"],
+            "ram_percent_used": report["memory"]["ram_percent_used"],
+            "swap_used_mb": report["memory"]["swap_used_mb"],
+            "swap_percent_used": report["memory"]["swap_percent_used"],
+            "global_jank_percent": report["ui_fluency"]["global_jank_percent"],
+            "total_anrs": report["anrs_and_crashes"]["total_anrs"],
+        }
+        if target_serial not in initial_baselines:
+            initial_baselines[target_serial] = snap
+        report["before_baseline"] = initial_baselines[target_serial]
+
         last_report = report
         return report
     except Exception as e:
@@ -274,6 +291,22 @@ def _execute_job_worker(action: str, target_serial: str, package: Optional[str],
             res = optimizer.force_stop_app(package or "")
         elif action == "clear_package_cache":
             res = optimizer.clear_app_data(package or "")
+        elif action == "debloat_uninstall":
+            res = optimizer.debloat_uninstall(package or "")
+        elif action == "debloat_restore":
+            res = optimizer.debloat_restore(package or "")
+        elif action == "debloat_uninstall_all":
+            res = optimizer.debloat_uninstall_all()
+        elif action == "enable_adguard_dns":
+            res = optimizer.enable_adguard_dns()
+        elif action == "disable_private_dns":
+            res = optimizer.disable_private_dns()
+        elif action == "enable_deep_doze":
+            res = optimizer.enable_deep_doze()
+        elif action == "clean_storage_junk":
+            res = optimizer.clean_storage_junk()
+        elif action == "tv_clean_home":
+            res = optimizer.toggle_tv_clean_home(True)
         elif action == "reboot":
             res = optimizer.reboot_device()
         else:
@@ -365,3 +398,89 @@ def run_optimization(req: ActionRequest):
             if ro else "Optimization started! Watch real-time step-by-step progress in the live console."
         )
     }
+
+@app.post("/api/remote/key")
+def remote_key(req: dict):
+    keycode = req.get("keycode", "")
+    serial = req.get("serial")
+    lang = req.get("lang", "en")
+    devices = adb.get_devices(lang=lang)
+    authorized = [d for d in devices if d["state"] == "device"]
+    if not authorized:
+        raise HTTPException(status_code=400, detail="No authorized device connected.")
+    target_serial = serial or authorized[0]["serial"]
+    opt = PhoneOptimizer(adb, target_serial, lang=lang)
+    return opt.send_remote_key(keycode)
+
+@app.post("/api/remote/text")
+def remote_text(req: dict):
+    text = req.get("text", "")
+    submit_enter = bool(req.get("submit_enter", False))
+    serial = req.get("serial")
+    lang = req.get("lang", "en")
+    devices = adb.get_devices(lang=lang)
+    authorized = [d for d in devices if d["state"] == "device"]
+    if not authorized:
+        raise HTTPException(status_code=400, detail="No authorized device connected.")
+    target_serial = serial or authorized[0]["serial"]
+    opt = PhoneOptimizer(adb, target_serial, lang=lang)
+    return opt.send_remote_text(text, submit_enter=submit_enter)
+
+@app.post("/api/install-apk")
+async def install_apk(request: Request, filename: str = "app.apk", serial: Optional[str] = None, lang: str = "en"):
+    ro = (lang == "ro")
+    devices = adb.get_devices(lang=lang)
+    authorized = [d for d in devices if d["state"] == "device"]
+    if not authorized:
+        raise HTTPException(status_code=400, detail="Niciun dispozitiv conectat." if ro else "No authorized device connected.")
+    target_serial = serial or authorized[0]["serial"]
+
+    body = await request.body()
+    if not body:
+        raise HTTPException(status_code=400, detail="Fișier APK gol." if ro else "Empty APK file.")
+
+    safe_name = os.path.basename(filename)
+    if not safe_name.lower().endswith(".apk"):
+        safe_name += ".apk"
+    tmp_dir = tempfile.gettempdir()
+    tmp_path = os.path.join(tmp_dir, safe_name)
+    with open(tmp_path, "wb") as f:
+        f.write(body)
+
+    def _apk_worker():
+        opt = PhoneOptimizer(adb, target_serial, progress_cb=_update_progress, lang=lang)
+        try:
+            res = opt.install_apk_file(tmp_path)
+            with job_lock:
+                job_state["running"] = False
+                job_state["completed"] = True
+                job_state["percent"] = 100
+                job_state["success"] = res.get("success", False)
+                job_state["title"] = res.get("title", "APK Install")
+                job_state["result_message"] = res.get("message", "")
+                job_state["current_task"] = res.get("message", "")
+                job_state["elapsed_sec"] = round(time.time() - job_state["started_at"], 1)
+        finally:
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+
+    now_str = datetime.datetime.now().strftime("%H:%M:%S")
+    with job_lock:
+        job_state["running"] = True
+        job_state["completed"] = False
+        job_state["action"] = "install_apk"
+        job_state["title"] = f"APK Install: {safe_name}"
+        job_state["step"] = 1
+        job_state["total_steps"] = 2
+        job_state["percent"] = 25
+        job_state["current_task"] = f"{'Se instalează' if ro else 'Installing'} {safe_name}..."
+        job_state["logs"] = [f"[{now_str}] 📦 {'Transfer și instalare APK' if ro else 'Uploading & installing APK'}: {safe_name}..."]
+        job_state["started_at"] = time.time()
+        job_state["elapsed_sec"] = 0
+        job_state["success"] = True
+        job_state["result_message"] = ""
+
+    threading.Thread(target=_apk_worker, daemon=True).start()
+    return {"started": True, "filename": safe_name}

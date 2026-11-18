@@ -980,3 +980,219 @@ class PhoneOptimizer:
                 if self.ro else "Reboot command sent to device. Please wait 30-45 seconds for it to restart."
             ) if ok else f"Error: {out}"
         }
+
+    # --- 1. Rootless Bloatware Uninstaller & 1-Click Undo/Restore ---
+    def debloat_uninstall(self, package: str) -> Dict[str, Any]:
+        """Safely uninstalls a bloatware package for current user (--user 0) so it can be restored anytime."""
+        package = self._normalize_package(package)
+        if not self._is_valid_package(package):
+            return {"success": False, "message": "Nume pachet invalid." if self.ro else "Invalid package name."}
+        if package in self.PROTECTED_PACKAGES:
+            return {
+                "success": False,
+                "message": (
+                    f"Pachetul {package} este o componentă esențială de sistem și este protejat."
+                    if self.ro else f"Package {package} is a protected core system component."
+                )
+            }
+
+        self._emit(1, 2, f"Dezinstalare bloatware (User 0): {package}...", f"⏳ Se oprește și se dezinstalează {package} (pm uninstall -k --user 0)...")
+        self.adb.run_shell(f"am force-stop {package}", self.serial, timeout=5)
+        ok, out = self.adb.run_shell(f"pm uninstall -k --user 0 {package}", self.serial, timeout=12)
+        if not ok or "Success" not in (out or ""):
+            ok, out = self.adb.run_shell(f"pm disable-user --user 0 {package}", self.serial, timeout=10)
+        self._emit(2, 2, "Finalizat!" if self.ro else "Completed!", f"✅ {package} {'dezinstalat (poate fi restaurat cu 1-clic)' if self.ro else 'uninstalled (can be restored with 1 click)'}!")
+        return {
+            "success": True,
+            "title": f"Dezinstalare: {package}" if self.ro else f"Uninstalled: {package}",
+            "message": (
+                f"Pachetul {package} a fost dezinstalat pentru utilizatorul curent! Îl poți restaura oricând cu butonul '♻️ Restaurează (Undo)'."
+                if self.ro else f"Package {package} was uninstalled for the current user! You can restore it anytime using '♻️ Restore (Undo)'."
+            )
+        }
+
+    def debloat_restore(self, package: str) -> Dict[str, Any]:
+        """Restores a previously uninstalled system/bloatware package with 1 click."""
+        package = self._normalize_package(package)
+        if not self._is_valid_package(package):
+            return {"success": False, "message": "Nume pachet invalid." if self.ro else "Invalid package name."}
+
+        self._emit(1, 1, f"Restaurare pachet: {package}...", f"⏳ Se restaurează {package} (cmd package install-existing)...")
+        ok, out = self.adb.run_shell(f"cmd package install-existing {package}", self.serial, timeout=12)
+        self.adb.run_shell(f"pm enable {package}", self.serial, timeout=6)
+        self._emit(1, 1, "Finalizat!" if self.ro else "Completed!", f"♻️ {package} {'a fost restaurat cu succes' if self.ro else 'restored'}!")
+        return {
+            "success": True,
+            "title": f"Restaurat: {package}" if self.ro else f"Restored: {package}",
+            "message": (
+                f"Pachetul {package} a fost restaurat și reactivat cu succes!"
+                if self.ro else f"Package {package} has been restored and re-enabled!"
+            )
+        }
+
+    def debloat_uninstall_all(self) -> Dict[str, Any]:
+        """Uninstalls all detected safe-to-remove bloatware packages on the connected device."""
+        from diagnostics import PhoneDiagnostics
+        diag = PhoneDiagnostics(self.adb, self.serial, lang=self.lang)
+        scan = diag.get_bloatware_scan()
+        active_list = [b["package"] for b in scan.get("active_bloatware", [])]
+
+        if not active_list:
+            msg = "Nu mai există bloatware activ de dezinstalat pe acest dispozitiv!" if self.ro else "No active bloatware found to uninstall on this device!"
+            self._emit(1, 1, "Curat!" if self.ro else "Clean!", f"✅ {msg}")
+            return {"success": True, "title": "Curățare Bloatware" if self.ro else "Bloatware Removal", "message": msg}
+
+        total = len(active_list)
+        removed = []
+        for idx, pkg in enumerate(active_list, 1):
+            self._emit(idx, total, f"Dezinstalare {pkg} ({idx}/{total})...", f"⏳ Se elimină {pkg}...")
+            self.adb.run_shell(f"am force-stop {pkg}", self.serial, timeout=4)
+            ok, out = self.adb.run_shell(f"pm uninstall -k --user 0 {pkg}", self.serial, timeout=10)
+            if not ok or "Success" not in (out or ""):
+                self.adb.run_shell(f"pm disable-user --user 0 {pkg}", self.serial, timeout=8)
+            removed.append(pkg)
+
+        msg = (
+            f"S-au dezinstalat {len(removed)} aplicații bloatware: {', '.join(removed)}. Le poți restaura oricând cu 1-clic!"
+            if self.ro else f"Uninstalled {len(removed)} bloatware packages: {', '.join(removed)}. You can restore any of them with 1 click!"
+        )
+        self._emit(total, total, "Finalizat!" if self.ro else "Completed!", f"✅ {msg}")
+        return {"success": True, "title": "Bloatware Eliminat" if self.ro else "Bloatware Removed", "message": msg}
+
+    # --- 2. AdGuard Private DNS (Rootless System-Wide AdBlock) ---
+    def enable_adguard_dns(self) -> Dict[str, Any]:
+        """Configures Android Private DNS to dns.adguard-dns.com for system-wide ad & tracker blocking."""
+        self._emit(1, 1, "Activare DNS Privat AdGuard...", "⏳ Se setează private_dns_mode=hostname și dns.adguard-dns.com...")
+        self.adb.run_shell("settings put global private_dns_mode hostname", self.serial, timeout=5)
+        self.adb.run_shell("settings put global private_dns_specifier dns.adguard-dns.com", self.serial, timeout=5)
+        msg = (
+            "DNS-ul Privat AdGuard (dns.adguard-dns.com) a fost activat la nivel de sistem! Reclamele și trackerele sunt acum blocate în aplicații și browsere fără consum de baterie."
+            if self.ro else
+            "AdGuard Private DNS (dns.adguard-dns.com) enabled system-wide! Ads and trackers are now blocked across apps and browsers with zero battery impact."
+        )
+        self._emit(1, 1, "Finalizat!" if self.ro else "Completed!", f"🛡️ {msg}")
+        return {"success": True, "title": "AdGuard Private DNS (AdBlock)", "message": msg}
+
+    def disable_private_dns(self) -> Dict[str, Any]:
+        """Restores standard automatic DNS (opportunistic mode)."""
+        self._emit(1, 1, "Restaurare DNS Standard...", "⏳ Se readuce private_dns_mode la opportunistic...")
+        self.adb.run_shell("settings put global private_dns_mode opportunistic", self.serial, timeout=5)
+        self.adb.run_shell("settings delete global private_dns_specifier", self.serial, timeout=5)
+        msg = "DNS-ul a fost readus la modul automat standard al rețelei." if self.ro else "DNS restored to standard automatic network mode."
+        self._emit(1, 1, "Finalizat!" if self.ro else "Completed!", f"✓ {msg}")
+        return {"success": True, "title": "DNS Standard", "message": msg}
+
+    # --- 3. Deep Doze Battery Saver ---
+    def enable_deep_doze(self) -> Dict[str, Any]:
+        """Enables aggressive Doze Mode & App Standby so the phone sleeps deeply when the screen is off."""
+        self._emit(1, 2, "Activare Deep Doze & App Standby...", "⏳ Se activează deviceidle și forced_app_standby_enabled...")
+        self.adb.run_shell("dumpsys deviceidle enable", self.serial, timeout=6)
+        self.adb.run_shell("settings put global forced_app_standby_enabled 1", self.serial, timeout=5)
+        self.adb.run_shell("settings put global app_standby_enabled 1", self.serial, timeout=5)
+        self.adb.run_shell("device_config put activity_manager_native_boot use_freezer true", self.serial, timeout=5)
+        msg = (
+            "Modul Deep Doze și App Standby Forțat au fost activate! Consumul de baterie peste noapte (cu ecranul stins) a fost redus la minimum."
+            if self.ro else
+            "Deep Doze & Forced App Standby enabled! Overnight standby battery drain is now minimized."
+        )
+        self._emit(2, 2, "Finalizat!" if self.ro else "Completed!", f"🔋 {msg}")
+        return {"success": True, "title": "Deep Doze Battery Saver", "message": msg}
+
+    # --- 4. Deep Storage Junk, Leftover APKs & Thumbnails Cleaner ---
+    def clean_storage_junk(self) -> Dict[str, Any]:
+        """Cleans leftover .apk installers in Download, DCIM/.thumbnails cache, system package caches, and runs fstrim."""
+        self._emit(1, 4, "Ștergere cache miniaturi foto/video (.thumbnails)...", "⏳ Se curăță /sdcard/DCIM/.thumbnails...")
+        self.adb.run_shell("rm -rf /sdcard/DCIM/.thumbnails/*", self.serial, timeout=10)
+
+        self._emit(2, 4, "Ștergere kituri .apk vechi din Downloads...", "⏳ Se elimină fișierele .apk reziduale din /sdcard/Download...")
+        self.adb.run_shell("find /sdcard/Download -maxdepth 2 -name '*.apk' -delete 2>/dev/null", self.serial, timeout=10)
+
+        self._emit(3, 4, "Eliberare cache aplicații (pm trim-caches)...", "⏳ Se eliberează cache-ul tuturor aplicațiilor...")
+        self.adb.run_shell("pm trim-caches 999999999999", self.serial, timeout=20)
+
+        self._emit(4, 4, "Optimizare blocuri flash (sm fstrim)...", "⏳ Se rulează TRIM pe stocarea internă...")
+        self.adb.run_shell("sm fstrim", self.serial, timeout=45)
+
+        msg = (
+            "Curățarea profundă a stocării s-a încheiat (cache aplicații, miniaturi .thumbnails, fișiere .apk reziduale din Download și fstrim)!"
+            if self.ro else
+            "Deep storage cleanup completed (app caches, .thumbnails cache, leftover Download .apk installers, and UFS fstrim)!"
+        )
+        self._emit(4, 4, "Finalizat!" if self.ro else "Completed!", f"📦 {msg}")
+        return {"success": True, "title": "Curățare Profundă Stocare" if self.ro else "Deep Storage Cleanup", "message": msg}
+
+    # --- 5. Android TV Clean Home (Disable Heavy Ad / Recommendation Banners) ---
+    def toggle_tv_clean_home(self, enable_clean: bool = True) -> Dict[str, Any]:
+        """On Android TV / Google TV, disables or re-enables heavy recommendation/ad banner services to speed up the Home screen."""
+        rec_pkgs = [
+            "com.google.android.tvrecommendations",
+            "com.google.android.leanbacklauncher.recommendations",
+            "org.droidtv.recommendation",
+            "org.droidtv.nettvrecommender",
+        ]
+        self._emit(1, 1, "Configurare ecran Home Android TV...", "⏳ Se configurează serviciile de bannere și recomandări TV...")
+        for pkg in rec_pkgs:
+            if enable_clean:
+                self.adb.run_shell(f"am force-stop {pkg}", self.serial, timeout=5)
+                self.adb.run_shell(f"pm clear --cache-only {pkg}", self.serial, timeout=5)
+                self.adb.run_shell(f"am set-standby-bucket {pkg} restricted", self.serial, timeout=5)
+                self.adb.run_shell(f"cmd appops set {pkg} RUN_ANY_IN_BACKGROUND ignore", self.serial, timeout=5)
+            else:
+                self.adb.run_shell(f"pm enable {pkg}", self.serial, timeout=5)
+                self.adb.run_shell(f"am set-standby-bucket {pkg} active", self.serial, timeout=5)
+                self.adb.run_shell(f"cmd appops set {pkg} RUN_ANY_IN_BACKGROUND allow", self.serial, timeout=5)
+
+        msg = (
+            "Serviciile grele de reclame și recomandări din fundalul Android TV au fost oprite și restricționate!"
+            if self.ro else "Heavy Android TV background recommendation and ad banner services have been stopped and restricted!"
+        )
+        self._emit(1, 1, "Finalizat!" if self.ro else "Completed!", f"📺 {msg}")
+        return {"success": True, "title": "Android TV Clean Home", "message": msg}
+
+    # --- 6. Virtual Remote Control & PC-to-TV/Phone Text Input ---
+    def send_remote_key(self, keycode: str) -> Dict[str, Any]:
+        """Sends an Android keyevent (e.g. KEYCODE_DPAD_UP, KEYCODE_HOME, KEYCODE_BACK) to the device."""
+        allowed = {
+            "KEYCODE_DPAD_UP", "KEYCODE_DPAD_DOWN", "KEYCODE_DPAD_LEFT", "KEYCODE_DPAD_RIGHT",
+            "KEYCODE_DPAD_CENTER", "KEYCODE_ENTER", "KEYCODE_BACK", "KEYCODE_HOME",
+            "KEYCODE_MENU", "KEYCODE_MEDIA_PLAY_PAUSE", "KEYCODE_VOLUME_UP", "KEYCODE_VOLUME_DOWN",
+            "KEYCODE_VOLUME_MUTE", "KEYCODE_POWER", "KEYCODE_SLEEP", "KEYCODE_WAKEUP",
+            "KEYCODE_APP_SWITCH", "KEYCODE_SEARCH", "KEYCODE_DEL"
+        }
+        kc = (keycode or "").strip().upper()
+        if kc not in allowed:
+            return {"success": False, "message": f"Invalid keycode: {kc}"}
+        ok, out = self.adb.run_shell(f"input keyevent {kc}", self.serial, timeout=5)
+        return {"success": ok, "keycode": kc}
+
+    def send_remote_text(self, text: str, submit_enter: bool = False) -> Dict[str, Any]:
+        """Types text directly from the PC onto the Android TV / Phone screen."""
+        if not text:
+            return {"success": False, "message": "Empty text"}
+        # Escape spaces for `adb shell input text`
+        escaped = text.replace(" ", "%s").replace("'", "").replace('"', "").replace("&", "\\&").replace(";", "")
+        ok, out = self.adb.run_shell(f'input text "{escaped}"', self.serial, timeout=8)
+        if submit_enter:
+            self.adb.run_shell("input keyevent KEYCODE_ENTER", self.serial, timeout=4)
+        return {
+            "success": ok,
+            "message": "Text trimis pe ecran!" if self.ro else "Text sent to screen!"
+        }
+
+    def install_apk_file(self, apk_path: str) -> Dict[str, Any]:
+        """Sideloads an APK file from the PC onto the connected Android Phone or Android TV."""
+        import os
+        fname = os.path.basename(apk_path)
+        self._emit(1, 2, f"Transfer și instalare APK: {fname}...", f"⏳ Se instalează {fname} prin ADB (adb install -r)...")
+        ok, out = self.adb.run_adb(["install", "-r", apk_path], serial=self.serial, timeout=180)
+        success = ok and "Success" in (out or "")
+        msg = (
+            (f"✅ Aplicația {fname} a fost instalată cu succes pe dispozitiv!" if self.ro else f"✅ {fname} successfully installed on device!")
+            if success else f"❌ {'Eroare la instalare' if self.ro else 'Install failed'}: {out}"
+        )
+        self._emit(2, 2, "Finalizat!" if self.ro else "Completed!", msg)
+        return {
+            "success": success,
+            "title": f"Instalare APK: {fname}" if self.ro else f"APK Install: {fname}",
+            "message": msg
+        }

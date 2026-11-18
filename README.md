@@ -39,10 +39,20 @@ For users who **do not have Python or Android Platform Tools installed**:
    - Monitors RAM and ZRAM saturation alongside Linux kernel `/proc/pressure/{cpu,memory,io}` stall metrics.
    - Stops parasitic background daemons (unused local AI services, telemetry, excessive debug ring buffers) and enables the Android *Cached App Freezer*.
 
-5. **Dual Connection Mode: USB Cable & Wireless ADB (100% Cable-Free)**:
-   - Perfect for devices with worn or broken USB ports: includes automatic **mDNS discovery** (`adb mdns services`), 6-digit pairing code support (`adb pair`), and direct Wi-Fi connection (`adb connect`).
+5. **Dual Connection Mode: USB Cable & Wireless ADB (100% Cable-Free for Phones & Android TV)**:
+   - Perfect for devices with worn or broken USB ports and **Android TV / Google TV Streamer**: includes automatic **mDNS discovery** (`adb mdns services`), **LAN Port 5555 auto-scanner** for Smart TVs, 6-digit pairing code support (`adb pair`), and direct Wi-Fi connection (`adb connect`).
    - Built-in **Real-Time Execution Console** with live step-by-step progress bar, timer, and live background compiler (`dex2oat64` / `fstrim`) monitoring.
    - Built-in **🇬🇧 EN / 🇷🇴 RO** instant language switcher in the Web UI.
+
+6. **Smart Bloatware Uninstaller (Rootless + 1-Click Undo / Restore)**:
+   - Detects preinstalled OEM & Smart TV bloatware (Philips Retail Demo/E-Sticker/NetTV/Loggers, Samba TV ACR, Meta background services, Bixby/GOS, Xiaomi MSA ads) and safely uninstalls them for the current user (`pm uninstall -k --user 0`) with a **1-Click `♻️ Restore (Undo)`** button (`cmd package install-existing`).
+
+7. **Virtual Remote Control, PC-to-TV Text Keyboard & Drag-and-Drop APK Sideloader**:
+   - Control any Android TV, Google TV Streamer, or phone using the on-screen D-Pad remote, send long passwords or search queries directly from your PC keyboard, and **drag-and-drop `.apk` files** into the browser to install them over Wi-Fi!
+
+8. **System-Wide AdGuard Private DNS (Rootless AdBlock), Deep Doze & Health Certificate Export**:
+   - **1-Click AdGuard Private DNS (`dns.adguard-dns.com`)** blocks ads and trackers system-wide with zero battery drain.
+   - **Deep Doze Battery Saver & WakeLock Detective**, **Storage Folder & `.thumbnails` / `.apk` Junk Cleaner**, **Sideloaded App Security Audit**, **Automatic Before vs. After Comparison Card**, and **Exportable HTML Health Certificate**.
 
 ---
 
